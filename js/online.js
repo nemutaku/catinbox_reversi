@@ -12,6 +12,7 @@
   let auth = null;
   let db = null;
   let authFallbackReady = false;
+  let navigatedToGame = false;
 
   function setStatus(message, isError = false) {
     statusEl.textContent = message;
@@ -44,6 +45,23 @@
     return firebase.firestore.FieldValue.serverTimestamp();
   }
 
+  function isShellFrame() {
+    return window.parent && window.parent !== window && sessionStorage.getItem("othelloShellAudio") === "1";
+  }
+
+  function navigate(path) {
+    if (isShellFrame()) {
+      window.parent.postMessage({ type: "othello:navigate", path, click: false }, "*");
+      setTimeout(() => {
+        if (location.href.includes("online.html")) {
+          window.top.location.href = path;
+        }
+      }, 2500);
+      return;
+    }
+    location.href = path;
+  }
+
   function watchRoom(roomCode) {
     if (unsubscribeRoom) unsubscribeRoom();
     unsubscribeRoom = db.collection("rooms").doc(roomCode).onSnapshot(snapshot => {
@@ -55,9 +73,24 @@
       const playerCount = Object.values(room.players || {}).filter(Boolean).length;
       roomCodeEl.textContent = roomCode;
       setStatus(`部屋 ${roomCode} に接続中です。参加人数: ${playerCount}/2`);
+      if (playerCount >= 2) enterOnlineGame(roomCode, room.players || {});
     }, error => {
       setStatus(`Firestore の監視に失敗しました: ${error.message}`, true);
     });
+  }
+
+  function enterOnlineGame(roomCode, players) {
+    if (navigatedToGame) return;
+    const playerId = getPlayerId();
+    const playerColor = players.black === playerId ? "black" : "white";
+    navigatedToGame = true;
+    sessionStorage.setItem("othelloOnlineSession", JSON.stringify({
+      roomCode,
+      playerId,
+      playerColor
+    }));
+    setStatus(`対局を開始します。あなたは${playerColor === "black" ? "黒" : "白"}です。`);
+    setTimeout(() => navigate("othello-online.html"), 650);
   }
 
   async function createRoom() {
@@ -132,20 +165,15 @@
         status,
         updatedAt: serverTimestamp()
       });
+      if (status === "playing") {
+        enterOnlineGame(roomCode, nextPlayers);
+      }
       watchRoom(roomCode);
     } catch (error) {
       setStatus(`部屋への参加に失敗しました: ${error.message}`, true);
     } finally {
       joinRoomButton.disabled = false;
     }
-  }
-
-  function navigateToModeSelect() {
-    if (window.parent && window.parent !== window && sessionStorage.getItem("othelloShellAudio") === "1") {
-      window.parent.postMessage({ type: "othello:navigate", path: "mode-select.html", click: false }, "*");
-      return;
-    }
-    location.href = "mode-select.html";
   }
 
   function enableAuthFallback() {
@@ -194,7 +222,7 @@
 
   createRoomButton.addEventListener("click", createRoom);
   joinRoomButton.addEventListener("click", joinRoom);
-  modeSelectButton.addEventListener("click", navigateToModeSelect);
+  modeSelectButton.addEventListener("click", () => navigate("mode-select.html"));
   joinCodeEl.addEventListener("input", () => {
     joinCodeEl.value = joinCodeEl.value.toUpperCase();
   });

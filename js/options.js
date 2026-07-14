@@ -170,6 +170,7 @@
     const from = new URLSearchParams(location.search).get('from');
     if (from === 'mode') return 'mode-select.html';
     if (from === 'ai') return 'othello-ai.html';
+    if (from === 'online') return 'othello-online.html';
     return from === 'local' ? 'othello-local.html' : 'index.html';
   }
 
@@ -184,6 +185,7 @@
     const path = backPath();
     if (path === 'othello-local.html') sessionStorage.setItem(restoreGameFlagKey, '1');
     if (path === 'othello-ai.html') sessionStorage.setItem('othelloRestoreAiGame', '1');
+    if (path === 'othello-online.html') sessionStorage.setItem('othelloRestoreOnlineGame', '1');
     if (shell) {
       window.parent.postMessage({ type: 'othello:navigate', path }, '*');
       return;

@@ -63,10 +63,15 @@
   const aiColorValue = () => -playerColorValue();
   const isAiMode = () => gameConfig.mode === 'ai';
   const isAiTurn = () => isAiMode() && turn === aiColorValue() && !gameOver && !finalObservationRunning;
+  const isOnlineMode = () => gameConfig.mode === 'online';
+  const isOnlineRemoteTurn = () => isOnlineMode() && turn !== playerColorValue() && !gameOver && !finalObservationRunning;
+  const canUseLocalControls = () => !isOnlineMode() || !isOnlineRemoteTurn();
   const colorName = color => color === B ? 'black' : 'white';
   const observationPopImage = event => `assets/images/cat_pop_${colorName(event.beforeColor)}box_${colorName(event.afterColor)}cat.png`;
+  let applyingRemoteState = false;
 
   function saveGameState() {
+    if (isOnlineMode()) return;
     if (!board || !probBoard || !observedBoard || !specialUsed || !observeUsesLeft) return;
     storage.save({
       board,
@@ -86,10 +91,12 @@
   }
 
   function clearGameState() {
+    if (isOnlineMode()) return;
     storage.clear();
   }
 
   function shouldRestoreGameState() {
+    if (isOnlineMode()) return false;
     return storage.shouldRestore();
   }
 
@@ -164,6 +171,7 @@
   }
 
   function selectSpecial(probability) {
+    if (!canUseLocalControls()) return;
     if (!specialAvailable(probability)) return;
     selectedSpecial = selectedSpecial === probability ? null : probability;
     render();
@@ -176,7 +184,8 @@
     const shownObserved = reviewing ? positionHistory[reviewIndex].observedBoard : observedBoard;
     const shownTurn = reviewing ? (positionHistory[reviewIndex].turn ?? turn) : turn;
     const aiThinking = isAiTurn();
-    const legal = !reviewing && !gameOver && !finalObservationRunning && !aiThinking ? moves(board, turn) : [];
+    const remoteTurn = isOnlineRemoteTurn();
+    const legal = !reviewing && !gameOver && !finalObservationRunning && !aiThinking && !remoteTurn ? moves(board, turn) : [];
     const shakingKeys = new Set();
     if (observingShaking && !reviewing) {
       for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
@@ -209,10 +218,11 @@
     whiteCount.classList.toggle('current-turn', (reviewing || !gameOver) && shownTurn === W);
     const turnLabel = elements.turn;
     if (turnLabel) turnLabel.textContent = reviewing ? `局面 ${reviewIndex}手目を表示` : gameOver ? '対局終了' : `${stoneName(turn)}の番です`;
-    elements.undo.disabled = !hasUndoTarget() || aiThinking;
+    elements.undo.disabled = !hasUndoTarget() || aiThinking || remoteTurn || isOnlineMode();
+    if (elements.newGame) elements.newGame.disabled = isOnlineMode();
     renderObserveControl();
-    elements.observe.disabled = reviewing || gameOver || finalObservationRunning || aiThinking || observeUsesLeft[turn] <= 0;
-    renderSpecialControls(reviewing || finalObservationRunning || aiThinking);
+    elements.observe.disabled = reviewing || gameOver || finalObservationRunning || aiThinking || remoteTurn || observeUsesLeft[turn] <= 0;
+    renderSpecialControls(reviewing || finalObservationRunning || aiThinking || remoteTurn);
     renderFaceToFaceControl();
     window.OthelloGameView.updateReviewControls(reviewControls, {
       gameOver,
@@ -308,6 +318,7 @@
   }
 
   function playMove(r, c) {
+    if (!canUseLocalControls()) return;
     const m = moves(board, turn).find(x => x.r === r && x.c === c);
     if (!m) return;
     audio.playSound(sounds.stonePlace);
@@ -325,6 +336,7 @@
     turn = -turn;
     positionHistory.push(snapshot());
     advance();
+    notifyStateChange('move');
   }
 
   function applyObservationRoll() {
@@ -359,6 +371,7 @@
   }
 
   function observe() {
+    if (!canUseLocalControls()) return;
     if (gameOver || finalObservationRunning || observeUsesLeft[turn] <= 0) return;
     undoStack.push({ board: copy(board), probBoard: copy(probBoard), observedBoard: copy(observedBoard), turn, positionHistoryLength: positionHistory.length, lastMove: lastMove && { ...lastMove }, specialUsed: copySpecialUsed(), selectedSpecial, observeUsesLeft: copyObserveUsesLeft() });
     observeUsesLeft[turn]--;
@@ -369,6 +382,7 @@
       positionHistory.push(snapshot());
       status(changed ? `観測により ${changed} 個の石の色が変わりました。` : '観測しましたが、石の色は変わりませんでした。');
       advance();
+      notifyStateChange('observe');
     });
   }
 
@@ -401,6 +415,7 @@
   }
 
   function start() {
+    if (isOnlineMode() && board && !canUseLocalControls()) return;
     clearGameState();
     lastMove = null;
     selectedSpecial = null;
@@ -434,6 +449,42 @@
     turn = B;
     positionHistory = [snapshot()];
     advance();
+    notifyStateChange('start');
+  }
+
+  function notifyStateChange(reason) {
+    if (applyingRemoteState || !gameConfig.onStateChange) return;
+    gameConfig.onStateChange(getGameState(), reason);
+  }
+
+  function applyExternalState(state) {
+    if (!state || !Array.isArray(state.board) || !Array.isArray(state.probBoard)) return;
+    applyingRemoteState = true;
+    board = copy(state.board);
+    probBoard = copy(state.probBoard);
+    observedBoard = normalizeObservedBoard(state.observedBoard);
+    turn = state.turn === W ? W : B;
+    lastMove = state.lastMove ? { ...state.lastMove } : null;
+    specialUsed = state.specialUsed || {
+      [B]: { 100: 0, 0: 0 },
+      [W]: { 100: 0, 0: 0 }
+    };
+    observeUsesLeft = state.observeUsesLeft || { [B]: 2, [W]: 2 };
+    selectedSpecial = null;
+    undoStack = [];
+    positionHistory = Array.isArray(state.positionHistory) && state.positionHistory.length ? state.positionHistory.map(item => ({
+      board: copy(item.board),
+      probBoard: copy(item.probBoard),
+      observedBoard: normalizeObservedBoard(item.observedBoard),
+      turn: item.turn === W ? W : B
+    })) : [snapshot()];
+    gameOver = Boolean(state.gameOver);
+    reviewIndex = gameOver ? positionHistory.length - 1 : null;
+    finalObservationRunning = false;
+    observingShaking = false;
+    observationPops = {};
+    render();
+    applyingRemoteState = false;
   }
 
   function getGameState() {
@@ -444,6 +495,7 @@
       probBoard: copy(probBoard),
       observedBoard: copy(observedBoard),
       turn,
+      lastMove: lastMove ? { ...lastMove } : null,
       playerColor: playerColorValue(),
       aiColor: aiColorValue(),
       isAiTurn: isAiTurn(),
@@ -456,6 +508,12 @@
         0: specialRemaining(0, turn)
       },
       observeUsesLeft: copyObserveUsesLeft(),
+      positionHistory: positionHistory.map(item => ({
+        board: copy(item.board),
+        probBoard: copy(item.probBoard),
+        observedBoard: normalizeObservedBoard(item.observedBoard),
+        turn: item.turn === W ? W : B
+      })),
       canObserve: observeUsesLeft[turn] > 0,
       counts: {
         black: count(B),
@@ -467,6 +525,7 @@
   window.quantumOthelloGame = {
     constants: { E, B, W },
     getState: getGameState,
+    applyExternalState,
     start,
     render
   };

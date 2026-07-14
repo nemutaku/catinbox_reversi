@@ -1,0 +1,2 @@
+    .dot.black { background:#151815; }.dot.white { background:#e8efe9; border:1px solid #98aa9d; }
+    @media(max-width:700px) { body{padding:16px} header{align-items:start; flex-direction:column}.layout{grid-template-columns:1fr}.board-column{display:contents}.board-wrap{order:1}.review-actions{order:2}.special-actions{order:3}.observe-actions{order:4}.board-actions{order:5}aside{order:6}.score{align-self:stretch}.count{flex:1} }

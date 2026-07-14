@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OTHELLO - MODE SELECT</title>
+  <script>
+    if (sessionStorage.getItem('othelloPageTransition') === '1') {
+      document.documentElement.classList.add('page-entering');
+      sessionStorage.removeItem('othelloPageTransition');
+    }
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<section id="titleScreen" class="title-screen" aria-label="モード選択">
+  <div>
+    <h1 class="title-logo">MODE SELECT</h1>
+    <p class="sub">対局モードを選んでください</p>
+  </div>
+  <div class="title-menu">
+    <button id="onlineBattle" type="button" class="secondary">オンライン対局</button>
+    <button id="aiBattle" type="button" class="secondary">AI対局</button>
+    <button id="localBattle" type="button">ローカル対局</button>
+    <button id="optionsButton" type="button" class="secondary">オプション</button>
+    <button id="titleBack" type="button" class="secondary">タイトルへ戻る</button>
+  </div>
+</section>
+<script>
+  const audioSettingsKey = 'othelloAudioSettings';
+  const audioStateKey = 'othelloBgmState';
+  const audioPrimeKey = 'othelloAudioPrime';
+  const titleBgmPath = 'assets/audio/bgm/title-01.mp3';
+  const bgmGain = 0.5;
+  const titleBgm = new Audio(titleBgmPath);
+  titleBgm.loop = true;
+  let titleBgmStarted = false;
+  let titleResumeApplied = false;
+
+  const getAudioSettings = () => {
+    const defaults = { bgmEnabled: true, seEnabled: true, bgmVolume: 0.45, seVolume: 0.7, matchBgm: 'match-01.mp3' };
+    try {
+      return { ...defaults, ...JSON.parse(localStorage.getItem(audioSettingsKey) || '{}') };
+    } catch {
+      return defaults;
+    }
+  };
+
+  const readBgmState = () => {
+    try {
+      return JSON.parse(sessionStorage.getItem(audioStateKey) || 'null');
+    } catch {
+      return null;
+    }
+  };
+
+  const applySavedBgmPosition = () => {
+    if (titleResumeApplied) return;
+    titleResumeApplied = true;
+    const state = readBgmState();
+    if (!state || state.src !== titleBgmPath) return;
+    const elapsed = Math.max(0, (Date.now() - state.updatedAt) / 1000);
+    const seek = () => {
+      const nextTime = state.currentTime + elapsed;
+      titleBgm.currentTime = Number.isFinite(titleBgm.duration) ? nextTime % titleBgm.duration : nextTime;
+    };
+    if (titleBgm.readyState >= 1) seek();
+    else titleBgm.addEventListener('loadedmetadata', seek, { once: true });
+  };
+
+  const saveBgmState = () => {
+    sessionStorage.setItem(audioStateKey, JSON.stringify({
+      src: titleBgmPath,
+      currentTime: titleBgm.currentTime || 0,
+      updatedAt: Date.now()
+    }));
+  };
+
+  const restoreAudibleTitleBgm = () => {
+    const settings = getAudioSettings();
+    titleBgm.volume = settings.bgmVolume * bgmGain;
+    titleBgm.muted = false;
+  };
+
+  const startTitleBgm = (primeMuted = false) => {
+    if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') return;
+    const settings = getAudioSettings();
+    if (!settings.bgmEnabled || titleBgmStarted) return;
+    applySavedBgmPosition();
+    titleBgm.volume = settings.bgmVolume * bgmGain;
+    titleBgm.muted = primeMuted;
+    titleBgmStarted = true;
+    titleBgm.play()
+      .then(() => {
+        if (primeMuted) setTimeout(restoreAudibleTitleBgm, 920);
+      })
+      .catch(() => {
+        titleBgm.muted = false;
+        titleBgmStarted = false;
+        document.addEventListener('pointerdown', () => startTitleBgm(false), { once: true });
+        document.addEventListener('keydown', () => startTitleBgm(false), { once: true });
+      });
+  };
+
+  const playClickSound = () => {
+    const settings = getAudioSettings();
+    if (!settings.seEnabled) return;
+    const sound = new Audio('assets/audio/se/ui-click.mp3');
+    sound.volume = 0.55 * settings.seVolume;
+    sound.play().catch(() => {});
+  };
+
+  const transitionTo = (path) => {
+    playClickSound();
+    if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') {
+      window.parent.postMessage({ type: 'othello:navigate', path, click: false }, '*');
+      return;
+    }
+    if (path === 'title') {
+      location.href = 'index.html';
+      return;
+    }
+    sessionStorage.setItem(audioPrimeKey, '1');
+    if (path.startsWith('options.html')) {
+      saveBgmState();
+      titleBgm.pause();
+      location.href = path;
+      return;
+    }
+    sessionStorage.removeItem(audioStateKey);
+    titleBgm.pause();
+    location.href = path;
+  };
+
+  document.querySelector('#localBattle').onclick = () => transitionTo('othello-local.html');
+  document.querySelector('#onlineBattle').onclick = () => transitionTo('online.html');
+  document.querySelector('#aiBattle').onclick = () => transitionTo('othello-ai.html');
+  document.querySelector('#optionsButton').onclick = () => transitionTo('options.html?from=mode');
+  document.querySelector('#titleBack').onclick = () => transitionTo('title');
+  const primeTitleBgm = document.documentElement.classList.contains('page-entering') || sessionStorage.getItem(audioPrimeKey) === '1';
+  sessionStorage.removeItem(audioPrimeKey);
+  startTitleBgm(primeTitleBgm);
+</script>
+</body>
+</html>

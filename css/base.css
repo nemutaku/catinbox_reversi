@@ -1,0 +1,15 @@
+:root { color-scheme: light; --ink:#173022; --muted:#5f7166; --green:#16734c; --board:#2d9c65; --line:#176742; --gold:#a66d08; --panel:#ffffff; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; color:var(--ink); font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; background:radial-gradient(circle at 50% -10%,#ffffff,#e7f0ea 62%); }
+    body.shell-body { padding:0; overflow:hidden; }
+    body::before { content:""; position:fixed; inset:0; z-index:9999; background:#050806; opacity:0; pointer-events:none; }
+    body.page-exiting::before { animation:pageFadeOut .76s ease-in-out forwards; }
+    html.page-entering body::before { opacity:1; animation:pageFadeIn .9s ease-in-out forwards; }
+    @keyframes pageFadeOut { from{opacity:0} to{opacity:1} }
+    @keyframes pageFadeIn { from{opacity:1} to{opacity:0} }
+    .shell-fade { position:fixed; inset:0; z-index:10000; background:#050806; opacity:0; pointer-events:none; }
+    .shell-fade.fade-out { animation:pageFadeOut .76s ease-in-out forwards; }
+    .shell-fade.fade-in { opacity:1; animation:pageFadeIn .9s ease-in-out forwards; }
+    main { width:min(940px,100%); }
+    main.face-flipped { transform:rotate(180deg); }
+    main[hidden], .title-screen[hidden] { display:none; }

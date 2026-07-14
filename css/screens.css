@@ -1,0 +1,42 @@
+    .start-screen { width:min(560px,100%); min-height:70vh; display:grid; place-content:center; gap:16px; text-align:center; cursor:pointer; outline:none; }
+    .shell-screen { width:100vw; height:100vh; }
+    .screen-frame { display:block; width:100%; height:100%; border:0; background:transparent; }
+    .start-logo { display:block; margin:0; color:var(--ink); font-size:clamp(3rem,15vw,7rem); font-weight:900; letter-spacing:0; }
+    .start-sub { margin:0; color:var(--muted); font-weight:750; }
+    .start-prompt { margin:20px 0 0; color:var(--gold); font-weight:850; animation:startPrompt 1.8s ease-in-out infinite; }
+    @keyframes startPrompt { 0%,100%{opacity:.45} 50%{opacity:1} }
+    .title-screen { width:min(420px,100%); display:grid; gap:18px; text-align:center; }
+    .title-logo { margin:0 0 6px; color:var(--ink); font-size:clamp(2rem,9vw,3.6rem); font-weight:850; letter-spacing:0; }
+    .title-menu { display:grid; gap:12px; }
+    .title-menu button { width:100%; padding:15px 14px; border:1px solid #b6cbbd; border-radius:9px; background:#e7f0ea; color:var(--ink); font-weight:800; cursor:pointer; }
+    .title-menu button.secondary { background:#e7f0ea; border:1px solid #b6cbbd; color:var(--ink); }
+    .title-menu button:disabled { cursor:not-allowed; opacity:.5; }
+    .options-screen { width:min(520px,100%); display:grid; gap:18px; }
+    .options-title { display:block; margin:0; color:var(--ink); font-size:clamp(1.8rem,7vw,3rem); font-weight:850; text-align:center; }
+    .options-panel { display:grid; gap:14px; padding:18px; border:1px solid #c7d8cc; border-radius:14px; background:#ffffff; box-shadow:0 14px 30px #45615022; }
+    .option-row { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; }
+    .option-row h2 { margin:0; font-size:1.05rem; }
+    .option-value { margin:4px 0 0; color:var(--muted); font-weight:750; }
+    .option-row input[type="range"] { grid-column:1 / -1; width:100%; accent-color:var(--gold); }
+    .switch-label { display:flex; align-items:center; gap:8px; margin:0; color:var(--ink); font-weight:750; }
+    .switch-label input { width:18px; height:18px; accent-color:var(--gold); }
+    .select-label { grid-column:1 / -1; display:grid; gap:7px; margin:0; color:var(--muted); font-weight:750; }
+    .bgm-choice { grid-column:1 / -1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .bgm-choice-button.selected { color:#ffffff; background:#173022; border-color:#173022; box-shadow:0 0 0 2px #d92d2d; }
+    .se-test-button { grid-column:1 / -1; }
+    .options-actions { display:grid; grid-template-columns:1fr; gap:10px; }
+    .online-screen { width:min(520px,100%); display:grid; gap:16px; text-align:center; }
+    .online-panel { display:grid; gap:16px; padding:18px; border:1px solid #c7d8cc; border-radius:14px; background:#ffffff; box-shadow:0 14px 30px #45615022; }
+    .online-actions { display:grid; gap:12px; }
+    .online-screen button { width:100%; min-height:46px; padding:11px 14px; border:1px solid #b6cbbd; border-radius:9px; color:var(--ink); background:#e7f0ea; font:inherit; font-weight:800; cursor:pointer; }
+    .online-screen button:hover { filter:brightness(1.08); }
+    .online-screen button.secondary { background:#e7f0ea; border-color:#b6cbbd; color:var(--ink); }
+    .room-join { display:grid; gap:8px; text-align:left; color:var(--muted); font-weight:800; }
+    .room-join input { width:100%; min-height:46px; padding:10px 12px; border:1px solid #b6cbbd; border-radius:9px; color:var(--ink); background:#f8fbf9; font:inherit; font-weight:800; text-align:center; letter-spacing:.08em; }
+    .room-info { display:grid; gap:6px; padding:14px; border:1px solid #d5e2d9; border-radius:10px; color:var(--muted); background:#f8fbf9; font-weight:800; }
+    .room-info strong { color:var(--gold); font-size:1.8rem; letter-spacing:.12em; }
+    .online-status { min-height:1.5em; margin:0; color:var(--muted); font-weight:750; }
+    .online-status.error { color:#c42d2d; }
+    header { display:flex; justify-content:space-between; gap:18px; align-items:end; margin-bottom:22px; }
+    h1 { display:none; }
+    .sub { margin:6px 0 0; color:var(--muted); font-size:.9rem; }

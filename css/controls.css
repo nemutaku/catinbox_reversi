@@ -1,0 +1,10 @@
+    button { touch-action:manipulation; }
+    select { width:100%; padding:10px; color:var(--ink); border:1px solid #9bb7a2; background:#ffffff; }
+    button.action { width:100%; padding:11px; border:1px solid #b6cbbd; color:var(--ink); background:#e7f0ea; font-weight:750; cursor:pointer; }
+    button.action:hover { filter:brightness(1.08); }
+    button.action.secondary { color:var(--ink); background:#e7f0ea; border:1px solid #b6cbbd; }
+    button:disabled:not(.cell) { position:relative; cursor:not-allowed; opacity:.58; overflow:hidden; }
+    button:disabled:not(.cell)::after { content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(to top right, transparent calc(50% - 1px), #6f8178aa 50%, transparent calc(50% + 1px)); }
+    button.action:disabled { cursor:not-allowed; opacity:.58; }
+    .legend { display:flex; gap:15px; color:var(--muted); font-size:.83rem; }
+    .dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:5px; vertical-align:-1px; }

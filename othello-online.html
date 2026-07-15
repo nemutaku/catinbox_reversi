@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>箱猫リバーシ - オンライン対局</title>
-<link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260715-online-7">
 </head>
 <body>
 <script>
@@ -19,23 +19,66 @@ window.addEventListener("unhandledrejection", event => {
 });
 </script>
 <main id="gameScreen">
-  <div class="layout"><div class="board-column"><div class="score"><div class="count"><span class="dot black"></span>黒 <b id="blackScore">2</b></div><div class="count"><span class="dot white"></span>白 <b id="whiteScore">2</b></div></div><section class="board-wrap" aria-label="オセロ盤"><div class="coord-top" aria-hidden="true"><span></span><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div><div class="board-row"><div class="coord-left" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div><div id="board" role="grid" aria-label="オセロ盤"></div></div></section><div class="special-actions" aria-label="特殊石"><button id="special100" class="action secondary" type="button">100%石</button><button id="special0" class="action secondary" type="button">0%石</button></div><div class="observe-actions"><button id="observe" class="action secondary" type="button">観測する(残り使用回数：2回)</button></div></div><aside>
-    <section class="panel online-room-panel" aria-label="オンライン対局">
-      <h2 class="panel-title">オンライン対局</h2>
-      <p id="onlineGameStatus" class="online-status">部屋に接続しています...</p>
-    </section>
-    <button id="optionsButton" class="action secondary" type="button">オプション</button><button id="modeSelectButton" class="action secondary" type="button">モード選択へ戻る</button><div class="board-actions"><button id="undo" class="action secondary" disabled>待った</button><button id="newGame" class="action">新規対局</button></div>
-  </aside></div>
+  <div class="layout">
+    <div class="board-column">
+      <div class="score">
+        <div class="count cat-score black-score">
+          <span class="score-icons" aria-hidden="true"><img src="assets/images/blackcat_normal.png" alt=""><img src="assets/images/blackbox_normal.png" alt=""></span>
+          <b id="blackScore">2</b>
+        </div>
+        <div class="count cat-score white-score">
+          <span class="score-icons" aria-hidden="true"><img src="assets/images/whitecat_normal.png" alt=""><img src="assets/images/whitebox_normal.png" alt=""></span>
+          <b id="whiteScore">2</b>
+        </div>
+      </div>
+      <section class="board-wrap" aria-label="オセロ盤">
+        <div class="coord-top" aria-hidden="true"><span></span><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+        <div class="board-row">
+          <div class="coord-left" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+          <div id="board" role="grid" aria-label="オセロ盤"></div>
+        </div>
+      </section>
+      <div class="special-actions" aria-label="特殊ボックス">
+        <button id="special100" class="action secondary" type="button">100%ボックス</button>
+        <button id="special0" class="action secondary" type="button">0%ボックス</button>
+      </div>
+      <div class="observe-actions">
+        <button id="observe" class="action secondary" type="button">オープン！(残り使用回数：2回)</button>
+      </div>
+    </div>
+    <aside>
+      <section class="panel online-room-panel" aria-label="オンライン対局">
+        <h2 class="panel-title">オンライン対局</h2>
+        <p id="onlineGameStatus" class="online-status">部屋に接続しています...</p>
+      </section>
+      <section class="panel online-clock-panel" aria-label="制限時間">
+        <h2 class="panel-title">制限時間</h2>
+        <div class="clock-grid">
+          <div class="clock-item" data-clock-player="black"><span>黒</span><b id="onlineBlackClock">5:00</b></div>
+          <div class="clock-item" data-clock-player="white"><span>白</span><b id="onlineWhiteClock">5:00</b></div>
+        </div>
+        <p id="onlineClockNote" class="online-clock-note">黒の時計が進行中</p>
+      </section>
+      <section class="panel online-resource-panel" aria-label="相手の残り回数">
+        <h2 class="panel-title">相手の残り回数</h2>
+        <div class="resource-grid">
+          <div class="resource-item"><span>100%ボックス</span><b id="onlineOpponentSpecial100">2回</b></div>
+          <div class="resource-item"><span>0%ボックス</span><b id="onlineOpponentSpecial0">2回</b></div>
+          <div class="resource-item wide"><span>オープン！</span><b id="onlineOpponentObserveLeft">2回</b></div>
+        </div>
+      </section>
+    </aside>
+  </div>
 </main>
 
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
 <script src="js/firebase-config.js?v=20260715-1"></script>
-<script src="js/online-game.js?v=20260715-2"></script>
+<script src="js/online-game.js?v=20260715-8"></script>
 <script src="js/othello-rules.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/game-storage.js"></script>
 <script src="js/game-view.js"></script>
-<script src="js/game.js?v=20260715-online-2"></script>
+<script src="js/game.js?v=20260715-online-8"></script>
 </body>
 </html>

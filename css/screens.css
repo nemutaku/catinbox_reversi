@@ -1,7 +1,31 @@
-    .start-screen { width:min(560px,100%); min-height:70vh; display:grid; place-content:center; gap:16px; text-align:center; cursor:pointer; outline:none; }
+    .start-screen {
+      width:100vw;
+      min-height:100vh;
+      display:grid;
+      place-content:start center;
+      gap:16px;
+      padding:clamp(54px,12vh,130px) 20px 40px;
+      text-align:center;
+      cursor:pointer;
+      outline:none;
+      background:
+        linear-gradient(180deg, rgba(255,248,232,.56) 0%, rgba(255,248,232,.18) 38%, rgba(255,248,232,.08) 100%),
+        url("../assets/images/title-background-portrait.png") center / cover no-repeat;
+    }
     .shell-screen { width:100vw; height:100vh; }
     .screen-frame { display:block; width:100%; height:100%; border:0; background:transparent; }
-    .start-logo { display:block; margin:0; color:var(--ink); font-size:clamp(3rem,15vw,7rem); font-weight:900; letter-spacing:0; }
+    .start-logo {
+      display:grid;
+      gap:.04em;
+      margin:0;
+      color:var(--ink);
+      font-weight:900;
+      line-height:.96;
+      letter-spacing:0;
+      text-shadow:0 4px 14px rgba(255,248,232,.76), 0 2px 0 rgba(255,255,255,.58);
+    }
+    .start-logo-main { display:block; font-size:clamp(3rem,15vw,7rem); }
+    .start-logo-sub { display:block; font-size:clamp(2rem,10vw,4.6rem); }
     .start-sub { margin:0; color:var(--muted); font-weight:750; }
     .start-prompt { margin:20px 0 0; color:var(--gold); font-weight:850; animation:startPrompt 1.8s ease-in-out infinite; }
     @keyframes startPrompt { 0%,100%{opacity:.45} 50%{opacity:1} }
@@ -40,3 +64,12 @@
     header { display:flex; justify-content:space-between; gap:18px; align-items:end; margin-bottom:22px; }
     h1 { display:none; }
     .sub { margin:6px 0 0; color:var(--muted); font-size:.9rem; }
+
+    @media (orientation: landscape) {
+      .start-screen {
+        padding-top:clamp(42px,9vh,96px);
+        background:
+          linear-gradient(180deg, rgba(255,248,232,.52) 0%, rgba(255,248,232,.14) 46%, rgba(255,248,232,.06) 100%),
+          url("../assets/images/title-background-landscape.png") center / cover no-repeat;
+      }
+    }

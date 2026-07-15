@@ -1,6 +1,8 @@
-:root { color-scheme: light; --ink:#173022; --muted:#5f7166; --green:#16734c; --board:#2d9c65; --line:#176742; --gold:#a66d08; --panel:#ffffff; }
+﻿:root { color-scheme: light; --ink:#173022; --muted:#766c61; --green:#16734c; --board:#efd8ae; --line:#c79d6f; --floor-light:#f8e6c4; --floor-mid:#efd1a1; --floor-dark:#d9b17d; --gold:#a66d08; --panel:#ffffff; }
     * { box-sizing:border-box; }
-    body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; color:var(--ink); font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; background:radial-gradient(circle at 50% -10%,#ffffff,#e7f0ea 62%); }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; color:var(--ink); font-family:"Zen Maru Gothic",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; background-color:#f3e4cf; background-image:
+      url("../assets/images/paw_pattern_soft.png"),
+      linear-gradient(180deg,#fff8ea 0%,#f7ead6 42%,#ead3b4 100%); background-size:360px 360px,auto; background-position:center,center; }
     body.shell-body { padding:0; overflow:hidden; }
     body::before { content:""; position:fixed; inset:0; z-index:9999; background:#050806; opacity:0; pointer-events:none; }
     body.page-exiting::before { animation:pageFadeOut .76s ease-in-out forwards; }
@@ -13,3 +15,4 @@
     main { width:min(940px,100%); }
     main.face-flipped { transform:rotate(180deg); }
     main[hidden], .title-screen[hidden] { display:none; }
+

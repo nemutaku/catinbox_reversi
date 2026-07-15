@@ -45,6 +45,7 @@
   let aiTurnTimer = null;
   let observingShaking = false;
   let observationPops = {};
+  let externalObservationPreviewRunning = false;
 
   const snapshot = () => ({ board: copy(board), probBoard: copy(probBoard), observedBoard: copy(observedBoard), turn });
   const specialUseCount = (probability, player = turn) => {
@@ -65,7 +66,8 @@
   const isAiTurn = () => isAiMode() && turn === aiColorValue() && !gameOver && !finalObservationRunning;
   const isOnlineMode = () => gameConfig.mode === 'online';
   const isOnlineRemoteTurn = () => isOnlineMode() && turn !== playerColorValue() && !gameOver && !finalObservationRunning;
-  const canUseLocalControls = () => !isOnlineMode() || !isOnlineRemoteTurn();
+  const isOnlineClockExpired = () => isOnlineMode() && gameConfig.isClockExpired?.(turn);
+  const canUseLocalControls = () => !isOnlineMode() || (!isOnlineRemoteTurn() && !isOnlineClockExpired());
   const colorName = color => color === B ? 'black' : 'white';
   const observationPopImage = event => `assets/images/cat_pop_${colorName(event.beforeColor)}box_${colorName(event.afterColor)}cat.png`;
   let applyingRemoteState = false;
@@ -145,7 +147,7 @@
   function renderObserveControl() {
     const button = elements.observe;
     const remaining = observeUsesLeft ? observeUsesLeft[turn] : 0;
-    button.textContent = `観測する\n(残り使用回数：${remaining}回)`;
+    button.textContent = `オープン！\n(残り使用回数：${remaining}回)`;
     button.disabled = gameOver || remaining <= 0;
   }
 
@@ -162,7 +164,7 @@
     for (const probability of [100, 0]) {
       const button = elements[`special${probability}`];
       const remaining = Math.max(0, specialUseLimit - specialUseCount(probability));
-      button.textContent = `${probability}%石\n(残り使用回数：${remaining}回)`;
+      button.textContent = `${probability}%ボックス\n(残り使用回数：${remaining}回)`;
       const available = !reviewing && !gameOver && specialAvailable(probability);
       button.disabled = !available;
       button.classList.toggle('selected', selectedSpecial === probability && available);
@@ -185,7 +187,8 @@
     const shownTurn = reviewing ? (positionHistory[reviewIndex].turn ?? turn) : turn;
     const aiThinking = isAiTurn();
     const remoteTurn = isOnlineRemoteTurn();
-    const legal = !reviewing && !gameOver && !finalObservationRunning && !aiThinking && !remoteTurn ? moves(board, turn) : [];
+    const clockExpired = isOnlineClockExpired();
+    const legal = !reviewing && !gameOver && !finalObservationRunning && !aiThinking && !remoteTurn && !clockExpired ? moves(board, turn) : [];
     const shakingKeys = new Set();
     if (observingShaking && !reviewing) {
       for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
@@ -218,11 +221,11 @@
     whiteCount.classList.toggle('current-turn', (reviewing || !gameOver) && shownTurn === W);
     const turnLabel = elements.turn;
     if (turnLabel) turnLabel.textContent = reviewing ? `局面 ${reviewIndex}手目を表示` : gameOver ? '対局終了' : `${stoneName(turn)}の番です`;
-    elements.undo.disabled = !hasUndoTarget() || aiThinking || remoteTurn || isOnlineMode();
+    if (elements.undo) elements.undo.disabled = !hasUndoTarget() || aiThinking || remoteTurn || isOnlineMode();
     if (elements.newGame) elements.newGame.disabled = isOnlineMode();
     renderObserveControl();
-    elements.observe.disabled = reviewing || gameOver || finalObservationRunning || aiThinking || remoteTurn || observeUsesLeft[turn] <= 0;
-    renderSpecialControls(reviewing || finalObservationRunning || aiThinking || remoteTurn);
+    elements.observe.disabled = reviewing || gameOver || finalObservationRunning || aiThinking || remoteTurn || clockExpired || observeUsesLeft[turn] <= 0;
+    renderSpecialControls(reviewing || finalObservationRunning || aiThinking || remoteTurn || clockExpired);
     renderFaceToFaceControl();
     window.OthelloGameView.updateReviewControls(reviewControls, {
       gameOver,
@@ -292,15 +295,15 @@
     gameOver = true;
     finalObservationRunning = true;
     reviewIndex = null;
-    status('最終観測中です。');
-    runObservationSequence('最終観測', (changed) => {
+    notifyStateChange('final-observe-start');
+    status('最後のオープン中です。');
+    runObservationSequence('ラストオープン！', (changed) => {
       positionHistory.push(snapshot());
-      reviewIndex = positionHistory.length - 1;
-      finalObservationRunning = false;
+      reviewIndex = null;
       const black = count(B), white = count(W);
       const result = black === white ? '引き分けです。' : black > white ? `黒の勝ち。${black} 対 ${white}` : `白の勝ち。${black} 対 ${white}`;
-      status(`最終観測で ${changed} 個の石の色が変わりました。${result}`);
-      render();
+      status(`最後のオープンで ${changed} 個のボックスから違う猫が出ました。${result}`);
+      notifyStateChange('final-observe');
     });
   }
   function advance() {
@@ -312,7 +315,7 @@
       if (positionHistory.length) positionHistory[positionHistory.length - 1].turn = turn;
       status(`${stoneName(passed)}は置けないため、${stoneName(turn)}の番です。`);
     } else {
-      status(`${stoneName(turn)}の石を置いてください。`);
+      status(`${stoneName(turn)}のボックスを置いてください。`);
     }
     render();
   }
@@ -363,11 +366,110 @@
       );
       if (result.colorChanged > 0 || result.probabilityChanged) audio.playSound(sounds.observeChange, 0.8);
       render();
+      afterRoll(result.colorChanged);
+      finalObservationRunning = true;
+      render();
       setTimeout(() => {
         observationPops = {};
-        afterRoll(result.colorChanged);
-      }, 560);
+        finalObservationRunning = false;
+        if (gameOver) reviewIndex = positionHistory.length - 1;
+        render();
+      }, 980);
     }, 900);
+  }
+
+  function playExternalObservationAnimation(label = 'オープン！') {
+    if (externalObservationPreviewRunning) return;
+    const boardWrap = elements.boardWrap;
+    externalObservationPreviewRunning = true;
+    finalObservationRunning = true;
+    observingShaking = true;
+    observationPops = {};
+    boardWrap.dataset.observeLabel = label;
+    boardWrap.classList.add('final-observing');
+    audio.playSound(sounds.observeStart, 0.75);
+    render();
+    setTimeout(() => {
+      boardWrap.classList.remove('final-observing');
+      delete boardWrap.dataset.observeLabel;
+      observingShaking = false;
+      render();
+    }, 900);
+    setTimeout(() => {
+      finalObservationRunning = false;
+      externalObservationPreviewRunning = false;
+      render();
+    }, 2600);
+  }
+
+  function observationPopImagesBetween(beforeBoard, beforeObserved, afterBoard, afterObserved) {
+    const pops = {};
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      if (beforeBoard?.[r]?.[c] === E || beforeObserved?.[r]?.[c] || !afterObserved?.[r]?.[c]) continue;
+      pops[`${r},${c}`] = observationPopImage({
+        beforeColor: beforeBoard[r][c],
+        afterColor: afterBoard[r][c]
+      });
+    }
+    return pops;
+  }
+
+  function applyExternalObservationState(state, label = 'オープン！') {
+    const boardWrap = elements.boardWrap;
+    const beforeBoard = copy(board);
+    const beforeObserved = normalizeObservedBoard(observedBoard);
+    const nextBoard = copy(state.board);
+    const nextProbBoard = copy(state.probBoard);
+    const nextObservedBoard = normalizeObservedBoard(state.observedBoard);
+    applyingRemoteState = true;
+    gameOver = false;
+    reviewIndex = null;
+    finalObservationRunning = true;
+    observingShaking = true;
+    observationPops = {};
+    boardWrap.dataset.observeLabel = label;
+    boardWrap.classList.add('final-observing');
+    audio.playSound(sounds.observeStart, 0.75);
+    render();
+    setTimeout(() => {
+      boardWrap.classList.remove('final-observing');
+      delete boardWrap.dataset.observeLabel;
+      observingShaking = false;
+      applyExternalState(state, { skipRender: true });
+      finalObservationRunning = true;
+      reviewIndex = null;
+      observationPops = observationPopImagesBetween(beforeBoard, beforeObserved, nextBoard, nextObservedBoard);
+      if (Object.keys(observationPops).length > 0) audio.playSound(sounds.observeChange, 0.8);
+      render();
+      setTimeout(() => {
+        observationPops = {};
+        finalObservationRunning = false;
+        if (gameOver) reviewIndex = positionHistory.length - 1;
+        render();
+        applyingRemoteState = false;
+      }, 980);
+    }, 900);
+  }
+
+  function applyExternalObservationResult(state) {
+    const beforeBoard = copy(board);
+    const beforeObserved = normalizeObservedBoard(observedBoard);
+    const nextBoard = copy(state.board);
+    const nextObservedBoard = normalizeObservedBoard(state.observedBoard);
+    applyingRemoteState = true;
+    applyExternalState(state, { skipRender: true });
+    finalObservationRunning = true;
+    reviewIndex = null;
+    observationPops = observationPopImagesBetween(beforeBoard, beforeObserved, nextBoard, nextObservedBoard);
+    if (Object.keys(observationPops).length > 0) audio.playSound(sounds.observeChange, 0.8);
+    render();
+    setTimeout(() => {
+      observationPops = {};
+      finalObservationRunning = false;
+      if (gameOver) reviewIndex = positionHistory.length - 1;
+      render();
+      applyingRemoteState = false;
+    }, 980);
   }
 
   function observe() {
@@ -376,11 +478,12 @@
     undoStack.push({ board: copy(board), probBoard: copy(probBoard), observedBoard: copy(observedBoard), turn, positionHistoryLength: positionHistory.length, lastMove: lastMove && { ...lastMove }, specialUsed: copySpecialUsed(), selectedSpecial, observeUsesLeft: copyObserveUsesLeft() });
     observeUsesLeft[turn]--;
     finalObservationRunning = true;
-    status('観測中です。');
-    runObservationSequence('観測', (changed) => {
+    notifyStateChange('observe-start');
+    status('オープン中です。');
+    runObservationSequence('オープン！', (changed) => {
       finalObservationRunning = false;
       positionHistory.push(snapshot());
-      status(changed ? `観測により ${changed} 個の石の色が変わりました。` : '観測しましたが、石の色は変わりませんでした。');
+      status(changed ? `オープンにより ${changed} 個のボックスから違う猫が出ました。` : 'オープンしましたが、出てきた猫は変わりませんでした。');
       advance();
       notifyStateChange('observe');
     });
@@ -457,8 +560,16 @@
     gameConfig.onStateChange(getGameState(), reason);
   }
 
-  function applyExternalState(state) {
+  function applyExternalState(state, options = {}) {
     if (!state || !Array.isArray(state.board) || !Array.isArray(state.probBoard)) return;
+    if (options.animateObservation) {
+      applyExternalObservationState(state, options.label);
+      return;
+    }
+    if (options.popObservationOnly) {
+      applyExternalObservationResult(state);
+      return;
+    }
     applyingRemoteState = true;
     board = copy(state.board);
     probBoard = copy(state.probBoard);
@@ -483,8 +594,8 @@
     finalObservationRunning = false;
     observingShaking = false;
     observationPops = {};
-    render();
-    applyingRemoteState = false;
+    if (!options.skipRender) render();
+    if (!options.skipRender) applyingRemoteState = false;
   }
 
   function getGameState() {
@@ -526,18 +637,19 @@
     constants: { E, B, W },
     getState: getGameState,
     applyExternalState,
+    playExternalObservationAnimation,
     start,
     render
   };
 
-  elements.newGame.onclick = start;
-  elements.undo.onclick = undo;
+  if (elements.newGame) elements.newGame.onclick = start;
+  if (elements.undo) elements.undo.onclick = undo;
   elements.observe.onclick = observe;
   elements.special100.onclick = () => selectSpecial(100);
   elements.special0.onclick = () => selectSpecial(0);
   const faceToFaceButton = elements.faceToFace;
   if (faceToFaceButton) faceToFaceButton.onclick = toggleFaceToFace;
-  elements.optionsButton.onclick = () => {
+  if (elements.optionsButton) elements.optionsButton.onclick = () => {
     saveGameState();
     if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') {
       window.parent.postMessage({
@@ -551,7 +663,7 @@
     audio.primeNextPage();
     location.href = `options.html?from=${encodeURIComponent(gameConfig.optionsFrom)}`;
   };
-  elements.modeSelectButton.onclick = () => {
+  if (elements.modeSelectButton) elements.modeSelectButton.onclick = () => {
     clearGameState();
     if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') {
       window.parent.postMessage({ type: 'othello:navigate', path: 'mode-select.html', click: false }, '*');

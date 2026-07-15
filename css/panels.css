@@ -17,9 +17,31 @@
     .ai-resource-list div { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; border:1px solid #d6e2da; border-radius:9px; background:#ffffff; }
     .ai-resource-list dt { color:var(--muted); font-weight:750; }
     .ai-resource-list dd { margin:0; color:var(--ink); font-weight:850; }
+    .resource-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .resource-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; border:1px solid #d6e2da; border-radius:9px; background:#ffffff; }
+    .resource-item.wide { grid-column:1 / -1; }
+    .resource-item span { color:var(--muted); font-weight:750; }
+    .resource-item b { color:var(--ink); font-weight:850; }
     .turn { font-size:1.1rem; font-weight:700; color:var(--gold); min-height:1.7em; }
     .face-toggle { margin:0; }
     .face-toggle.active { background:#173022; color:#ffffff; }
     .message { min-height:3em; color:var(--muted); line-height:1.55; font-size:.92rem; }
     label { display:block; color:var(--muted); font-size:.84rem; margin-bottom:7px; }
     select, button { font:inherit; border-radius:9px; }
+    .ai-screen { width:min(980px,100%); }
+    .ai-layout { grid-template-columns:minmax(280px,590px) minmax(210px,300px); gap:16px; }
+    .ai-resource-strip { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    .ai-resource-chip { min-width:0; padding:8px 7px; border:1px solid #bdd1c3; border-radius:10px; background:linear-gradient(145deg,#ffffff,#f3f8f4); text-align:center; }
+    .ai-resource-chip span { display:block; color:var(--muted); font-size:.72rem; font-weight:750; white-space:nowrap; }
+    .ai-resource-chip b { display:block; margin-top:2px; color:var(--ink); font-size:1rem; line-height:1.1; }
+    .ai-side { display:grid; align-content:start; gap:10px; }
+    .ai-settings-panel { padding:14px; }
+    .ai-settings-grid { display:grid; gap:14px; }
+    .player-color-options.compact { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .ai-difficulty-options.compact { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+    .ai-difficulty-options.compact .difficulty-choice,
+    .player-color-options.compact .stone-choice { min-height:42px; padding:8px 6px; justify-content:center; text-align:center; font-size:.82rem; }
+    .ai-difficulty-options.compact .difficulty-choice { flex-direction:column; gap:4px; }
+    .ai-quick-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .ai-quick-actions .icon-action { min-height:58px; display:grid; place-items:center; padding:8px 6px; border-radius:12px; line-height:1.15; }
+    .ai-quick-actions .icon-action span { font-size:.9rem; font-weight:850; }

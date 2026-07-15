@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OTHELLO - ローカル対局</title>
+  <title>箱猫リバーシ - AI対局</title>
   <script>
     if (sessionStorage.getItem('othelloPageTransition') === '1') {
       document.documentElement.classList.add('page-entering');
@@ -13,31 +13,74 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main id="gameScreen">
-  <div class="layout"><div class="board-column"><div class="score"><div class="count"><span class="dot black"></span>黒 <b id="blackScore">2</b></div><div class="count"><span class="dot white"></span>白 <b id="whiteScore">2</b></div></div><section class="board-wrap" aria-label="オセロ盤"><div class="coord-top" aria-hidden="true"><span></span><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div><div class="board-row"><div class="coord-left" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div><div id="board" role="grid" aria-label="オセロ盤"></div></div></section><div class="special-actions" aria-label="特殊石"><button id="special100" class="action secondary" type="button">100%石</button><button id="special0" class="action secondary" type="button">0%石</button></div><div class="observe-actions"><button id="observe" class="action secondary" type="button">観測する(残り使用回数：2回)</button></div></div><aside>
-    <section class="panel player-color-panel" aria-label="自分の石の色">
-      <h2 class="panel-title">自分の石の色</h2>
-      <div class="player-color-options">
-        <label class="stone-choice"><input type="radio" name="playerColor" value="black" checked><span class="dot black"></span>黒</label>
-        <label class="stone-choice"><input type="radio" name="playerColor" value="white"><span class="dot white"></span>白</label>
+<main id="gameScreen" class="ai-screen">
+  <div class="layout ai-layout">
+    <div class="board-column">
+      <div class="score">
+        <div class="count cat-score black-score">
+          <span class="score-icons" aria-hidden="true"><img src="assets/images/blackcat_normal.png" alt=""><img src="assets/images/blackbox_normal.png" alt=""></span>
+          <b id="blackScore">2</b>
+        </div>
+        <div class="count cat-score white-score">
+          <span class="score-icons" aria-hidden="true"><img src="assets/images/whitecat_normal.png" alt=""><img src="assets/images/whitebox_normal.png" alt=""></span>
+          <b id="whiteScore">2</b>
+        </div>
       </div>
-    </section><section class="panel ai-difficulty-panel" aria-label="AIの強さ">
-      <h2 class="panel-title">AIの強さ</h2>
-      <div class="ai-difficulty-options">
-        <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="easy" checked>かんたん</label>
-        <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="normal">ふつう</label>
-        <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="hard">むずかしい</label>
-      </div>
-    </section><section class="panel ai-resource-panel" aria-label="AIの残り回数">
-      <h2 class="panel-title">AIの残り回数</h2>
-      <dl class="ai-resource-list">
-        <div><dt>100%石</dt><dd id="aiSpecial100">2回</dd></div>
-        <div><dt>0%石</dt><dd id="aiSpecial0">2回</dd></div>
-        <div><dt>観測</dt><dd id="aiObserveLeft">2回</dd></div>
-      </dl>
-    </section><button id="optionsButton" class="action secondary" type="button">オプション</button><button id="modeSelectButton" class="action secondary" type="button">モード選択へ戻る</button><div class="board-actions"><button id="undo" class="action secondary" disabled>待った</button><button id="newGame" class="action">新規対局</button></div>
-  </aside></div>
 
+      <section class="ai-resource-strip" aria-label="AIの残り回数">
+        <div class="ai-resource-chip"><span>AI 100%ボックス</span><b id="aiSpecial100">2回</b></div>
+        <div class="ai-resource-chip"><span>AI 0%ボックス</span><b id="aiSpecial0">2回</b></div>
+        <div class="ai-resource-chip"><span>AI オープン！</span><b id="aiObserveLeft">2回</b></div>
+      </section>
+
+      <section class="board-wrap" aria-label="オセロ盤">
+        <div class="coord-top" aria-hidden="true">
+          <span></span><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span>
+        </div>
+        <div class="board-row">
+          <div class="coord-left" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+          <div id="board" role="grid" aria-label="オセロ盤"></div>
+        </div>
+      </section>
+
+      <div class="special-actions" aria-label="特殊ボックス">
+        <button id="special100" class="action secondary" type="button">100%ボックス</button>
+        <button id="special0" class="action secondary" type="button">0%ボックス</button>
+      </div>
+      <div class="observe-actions">
+        <button id="observe" class="action secondary" type="button">オープン！(残り使用回数：2回)</button>
+      </div>
+    </div>
+
+    <aside class="ai-side">
+      <section class="panel ai-settings-panel" aria-label="AI対局設定">
+        <div class="ai-settings-grid">
+          <div>
+            <h2 class="panel-title">自分の色</h2>
+            <div class="player-color-options compact">
+              <label class="stone-choice"><input type="radio" name="playerColor" value="black" checked><span class="dot black"></span>黒</label>
+              <label class="stone-choice"><input type="radio" name="playerColor" value="white"><span class="dot white"></span>白</label>
+            </div>
+          </div>
+          <div>
+            <h2 class="panel-title">AI</h2>
+            <div class="ai-difficulty-options compact">
+              <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="easy" checked>かんたん</label>
+              <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="normal">ふつう</label>
+              <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="hard">むずかしい</label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="ai-quick-actions" aria-label="対局操作">
+        <button id="undo" class="action secondary icon-action" type="button" disabled><span>待った</span></button>
+        <button id="newGame" class="action icon-action" type="button"><span>新規</span></button>
+        <button id="optionsButton" class="action secondary icon-action" type="button"><span>設定</span></button>
+        <button id="modeSelectButton" class="action secondary icon-action" type="button"><span>戻る</span></button>
+      </div>
+    </aside>
+  </div>
 </main>
 <script src="js/opening-book.js"></script>
 <script src="js/ai-game.js"></script>
@@ -48,3 +91,4 @@
 <script src="js/game.js"></script>
 </body>
 </html>
+

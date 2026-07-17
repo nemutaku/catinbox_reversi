@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>箱猫リバーシ - オンライン対局</title>
-  <link rel="stylesheet" href="style.css?v=20260715-online-7">
+  <title>はこ×ねこリバーシ - オンライン対局</title>
+  <link rel="stylesheet" href="style.css?v=20260717-review-1">
 </head>
 <body>
 <script>
@@ -47,10 +47,6 @@ window.addEventListener("unhandledrejection", event => {
       </div>
     </div>
     <aside>
-      <section class="panel online-room-panel" aria-label="オンライン対局">
-        <h2 class="panel-title">オンライン対局</h2>
-        <p id="onlineGameStatus" class="online-status">部屋に接続しています...</p>
-      </section>
       <section class="panel online-clock-panel" aria-label="制限時間">
         <h2 class="panel-title">制限時間</h2>
         <div class="clock-grid">
@@ -67,6 +63,10 @@ window.addEventListener("unhandledrejection", event => {
           <div class="resource-item wide"><span>オープン！</span><b id="onlineOpponentObserveLeft">2回</b></div>
         </div>
       </section>
+      <section class="online-game-actions" aria-label="オンライン対局操作">
+        <button id="onlineResign" class="action secondary" type="button">投了する</button>
+        <button id="onlineBackToRoom" class="action" type="button" hidden>ルーム作成画面へ戻る</button>
+      </section>
     </aside>
   </div>
 </main>
@@ -74,11 +74,15 @@ window.addEventListener("unhandledrejection", event => {
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
 <script src="js/firebase-config.js?v=20260715-1"></script>
-<script src="js/online-game.js?v=20260715-8"></script>
+<script src="js/online-game.js?v=20260717-1"></script>
 <script src="js/othello-rules.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/game-storage.js"></script>
 <script src="js/game-view.js"></script>
-<script src="js/game.js?v=20260715-online-8"></script>
+<script src="js/game.js?v=20260717-result-2"></script>
 </body>
 </html>
+
+
+
+

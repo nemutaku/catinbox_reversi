@@ -1,0 +1,112 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - AI設定</title>
+  <script>
+    if (sessionStorage.getItem('othelloPageTransition') === '1') {
+      document.documentElement.classList.add('page-entering');
+      sessionStorage.removeItem('othelloPageTransition');
+    }
+  </script>
+  <link rel="stylesheet" href="style.css?v=20260717-review-1">
+</head>
+<body>
+<main class="ai-setup-screen">
+  <div>
+    <h1 class="title-logo">AI&#23550;&#23616;</h1>
+    <p class="sub">&#25163;&#30058;&#12392;AI&#12398;&#24375;&#12373;&#12434;&#36984;&#12435;&#12391;&#12367;&#12384;&#12373;&#12356;</p>
+  </div>
+
+  <section class="ai-setup-panel" aria-label="AI&#23550;&#23616;&#35373;&#23450;">
+    <div class="ai-setup-group">
+      <h2 class="panel-title">&#33258;&#20998;&#12398;&#33394;</h2>
+      <div class="player-color-options ai-setup-options">
+        <label class="stone-choice"><input type="radio" name="playerColor" value="black" checked><span class="dot black"></span>&#40658;</label>
+        <label class="stone-choice"><input type="radio" name="playerColor" value="white"><span class="dot white"></span>&#30333;</label>
+      </div>
+    </div>
+
+    <div class="ai-setup-group">
+      <h2 class="panel-title">AI&#12398;&#24375;&#12373;</h2>
+      <div class="ai-difficulty-options ai-setup-options">
+        <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="easy" checked>&#12363;&#12435;&#12383;&#12435;</label>
+        <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="normal">&#12405;&#12388;&#12358;</label>
+        <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="hard">&#12416;&#12378;&#12363;&#12375;&#12356;</label>
+      </div>
+    </div>
+  </section>
+
+  <div class="ai-setup-actions">
+    <button id="startAiBattle" type="button" class="action">&#23550;&#23616;&#38283;&#22987;</button>
+    <button id="modeSelectButton" type="button" class="action secondary">&#12514;&#12540;&#12489;&#36984;&#25246;&#12408;&#25147;&#12427;</button>
+  </div>
+</main>
+
+<script>
+(() => {
+  const audioSettingsKey = 'othelloAudioSettings';
+  const playerColorKey = 'othelloAiPlayerColor';
+  const difficultyKey = 'othelloAiDifficulty';
+
+  function getAudioSettings() {
+    const defaults = { bgmEnabled: true, seEnabled: true, bgmVolume: 0.45, seVolume: 0.7, matchBgm: 'match-01.mp3' };
+    try {
+      return { ...defaults, ...JSON.parse(localStorage.getItem(audioSettingsKey) || '{}') };
+    } catch {
+      return defaults;
+    }
+  }
+
+  function playClickSound() {
+    const settings = getAudioSettings();
+    if (!settings.seEnabled) return;
+    const sound = new Audio('assets/audio/se/ui-click.mp3');
+    sound.volume = 0.55 * settings.seVolume;
+    sound.play().catch(() => {});
+  }
+
+  function transitionTo(path) {
+    playClickSound();
+    if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') {
+      window.parent.postMessage({ type: 'othello:navigate', path, click: false }, '*');
+      return;
+    }
+    location.href = path;
+  }
+
+  function loadPlayerColor() {
+    return localStorage.getItem(playerColorKey) === 'white' ? 'white' : 'black';
+  }
+
+  function loadDifficulty() {
+    const value = localStorage.getItem(difficultyKey);
+    return ['easy', 'normal', 'hard'].includes(value) ? value : 'easy';
+  }
+
+  function syncRadioGroup(name, value) {
+    document.querySelectorAll(`input[name="${name}"]`).forEach(input => {
+      input.checked = input.value === value;
+    });
+  }
+
+  function selectedValue(name) {
+    return document.querySelector(`input[name="${name}"]:checked`)?.value;
+  }
+
+  syncRadioGroup('playerColor', loadPlayerColor());
+  syncRadioGroup('aiDifficulty', loadDifficulty());
+
+  document.querySelector('#startAiBattle').addEventListener('click', () => {
+    localStorage.setItem(playerColorKey, selectedValue('playerColor') || 'black');
+    localStorage.setItem(difficultyKey, selectedValue('aiDifficulty') || 'easy');
+    transitionTo('othello-ai.html');
+  });
+
+  document.querySelector('#modeSelectButton').addEventListener('click', () => transitionTo('mode-select.html'));
+})();
+</script>
+</body>
+</html>
+

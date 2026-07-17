@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>箱猫リバーシ - AI対局</title>
+  <title>はこ×ねこリバーシ - AI対局</title>
   <script>
     if (sessionStorage.getItem('othelloPageTransition') === '1') {
       document.documentElement.classList.add('page-entering');
       sessionStorage.removeItem('othelloPageTransition');
     }
   </script>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260717-review-1">
 </head>
 <body>
 <main id="gameScreen" class="ai-screen">
@@ -53,26 +53,6 @@
     </div>
 
     <aside class="ai-side">
-      <section class="panel ai-settings-panel" aria-label="AI対局設定">
-        <div class="ai-settings-grid">
-          <div>
-            <h2 class="panel-title">自分の色</h2>
-            <div class="player-color-options compact">
-              <label class="stone-choice"><input type="radio" name="playerColor" value="black" checked><span class="dot black"></span>黒</label>
-              <label class="stone-choice"><input type="radio" name="playerColor" value="white"><span class="dot white"></span>白</label>
-            </div>
-          </div>
-          <div>
-            <h2 class="panel-title">AI</h2>
-            <div class="ai-difficulty-options compact">
-              <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="easy" checked>かんたん</label>
-              <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="normal">ふつう</label>
-              <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="hard">むずかしい</label>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <div class="ai-quick-actions" aria-label="対局操作">
         <button id="undo" class="action secondary icon-action" type="button" disabled><span>待った</span></button>
         <button id="newGame" class="action icon-action" type="button"><span>新規</span></button>
@@ -83,12 +63,17 @@
   </div>
 </main>
 <script src="js/opening-book.js"></script>
-<script src="js/ai-game.js"></script>
+<script src="js/ai-game.js?v=20260717-opening-symmetry-1"></script>
 <script src="js/othello-rules.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/game-storage.js"></script>
 <script src="js/game-view.js"></script>
-<script src="js/game.js"></script>
+<script src="js/game.js?v=20260717-result-2"></script>
 </body>
 </html>
+
+
+
+
+
 

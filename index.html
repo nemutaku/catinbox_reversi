@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>はこ×ねこリバーシ</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260717-review-1">
 </head>
 <body class="shell-body">
 <main id="startScreen" class="start-screen" role="button" tabindex="0" aria-label="タイトル画面">
@@ -39,6 +39,18 @@
   let bgmStarted = false;
   let currentBgmType = 'title';
   let transitioning = false;
+  const allowedScreens = new Map([
+    ['mode-select.html', 'title'],
+    ['ai-setup.html', 'title'],
+    ['online.html', 'title'],
+    ['options.html', 'title'],
+    ['othello-local.html', 'match'],
+    ['othello-ai.html', 'match'],
+    ['othello-online.html', 'match']
+  ]);
+  const screenAliases = new Map([
+    ['title', 'title']
+  ]);
   const initialScreen = new URLSearchParams(location.search).get('screen');
 
   sessionStorage.setItem('othelloShellAudio', '1');
@@ -56,37 +68,63 @@
     return `assets/audio/bgm/${fileName}`;
   }
 
+  function normalizeScreenPath(path) {
+    const raw = String(path || '').trim();
+    if (screenAliases.has(raw)) return raw;
+    let url;
+    try {
+      url = new URL(raw, location.href);
+    } catch {
+      return null;
+    }
+    if (url.origin !== location.origin) return null;
+    const baseDir = location.pathname.replace(/[^/]*$/, '');
+    if (url.pathname.replace(/[^/]*$/, '') !== baseDir) return null;
+    const fileName = url.pathname.split('/').pop();
+    if (!allowedScreens.has(fileName)) return null;
+    return url.search ? `${fileName}${url.search}` : fileName;
+  }
+
   function bgmTypeFor(path) {
-    if (path === 'title' || path.includes('mode-select') || path.includes('from=mode') || path.includes('from=index')) return 'title';
-    return 'match';
+    if (path === 'title') return 'title';
+    const normalized = normalizeScreenPath(path);
+    const fileName = normalized ? normalized.split('?')[0] : '';
+    return allowedScreens.get(fileName) || 'title';
   }
 
   function bgmSrcFor(type) {
     return type === 'match' ? matchBgmPath() : titleBgmPath;
   }
 
+  function syncBgmSource(type) {
+    const nextSrc = bgmSrcFor(type);
+    if (!bgm.src.endsWith(nextSrc)) {
+      bgm.src = nextSrc;
+      bgm.currentTime = 0;
+    }
+  }
+
+  function applyBgmVolume(settings = getAudioSettings()) {
+    bgm.volume = settings.bgmVolume * bgmGain;
+  }
+
   function applyAudioSettings() {
     const settings = getAudioSettings();
-    bgm.volume = settings.bgmVolume * bgmGain;
+    applyBgmVolume(settings);
     if (!settings.bgmEnabled) {
       bgm.pause();
       bgmStarted = false;
       return;
     }
-    const nextSrc = bgmSrcFor(currentBgmType);
-    if (!bgm.src.endsWith(nextSrc)) bgm.src = nextSrc;
+    syncBgmSource(currentBgmType);
     if (bgmStarted && bgm.paused) bgm.play().catch(() => {});
   }
 
   function startBgm(type = currentBgmType) {
     currentBgmType = type;
     const settings = getAudioSettings();
-    const nextSrc = bgmSrcFor(type);
-    if (!bgm.src.endsWith(nextSrc)) {
-      bgm.src = nextSrc;
-      bgm.currentTime = 0;
-    }
-    bgm.volume = settings.bgmVolume * bgmGain;
+    syncBgmSource(type);
+    applyBgmVolume(settings);
     if (!settings.bgmEnabled) return Promise.resolve();
     bgmStarted = true;
     return bgm.play().catch(() => {
@@ -126,27 +164,31 @@
 
   async function navigate(path, { click = true } = {}) {
     if (transitioning) return;
+    const nextPath = normalizeScreenPath(path);
+    if (!nextPath) return;
     transitioning = true;
-    if (click) playClickSound();
-    showFade();
-    await new Promise(resolve => setTimeout(resolve, fadeMs));
-    if (path === 'title') {
-      shellScreen.hidden = true;
-      screenFrame.removeAttribute('src');
-      startScreen.hidden = false;
+    try {
+      if (click) playClickSound();
+      showFade();
+      await new Promise(resolve => setTimeout(resolve, fadeMs));
+      if (nextPath === 'title') {
+        shellScreen.hidden = true;
+        screenFrame.removeAttribute('src');
+        startScreen.hidden = false;
+        hideFade();
+        await wait(fadeInMs);
+        await startBgm('title');
+        return;
+      }
+      startScreen.hidden = true;
+      shellScreen.hidden = false;
+      await setFrame(nextPath);
       hideFade();
       await wait(fadeInMs);
-      await startBgm('title');
+      await startBgm(bgmTypeFor(nextPath));
+    } finally {
       transitioning = false;
-      return;
     }
-    startScreen.hidden = true;
-    shellScreen.hidden = false;
-    await setFrame(path);
-    hideFade();
-    await wait(fadeInMs);
-    await startBgm(bgmTypeFor(path));
-    transitioning = false;
   }
 
   function openModeSelect() {
@@ -155,11 +197,14 @@
 
   async function openInitialScreen() {
     if (!initialScreen) return;
+    const nextScreen = normalizeScreenPath(initialScreen);
     history.replaceState(null, '', location.pathname);
-    await navigate(initialScreen, { click: false });
+    if (nextScreen) await navigate(nextScreen, { click: false });
   }
 
   window.addEventListener('message', event => {
+    if (event.source !== screenFrame.contentWindow) return;
+    if (event.origin !== 'null' && event.origin !== location.origin) return;
     const data = event.data || {};
     if (data.type === 'othello:navigate' && typeof data.path === 'string') {
       navigate(data.path, { click: data.click !== false });
@@ -174,7 +219,10 @@
 
   startScreen.addEventListener('click', openModeSelect);
   startScreen.addEventListener('keydown', event => {
-    if (event.key === 'Enter' || event.key === ' ') openModeSelect();
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openModeSelect();
+    }
   });
   window.addEventListener('storage', applyAudioSettings);
   window.OthelloShell = {
@@ -190,3 +238,6 @@
 </script>
 </body>
 </html>
+
+
+

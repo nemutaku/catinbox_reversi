@@ -24,6 +24,8 @@
   let clockInterval = null;
   let timeoutPublishing = false;
   let lastRenderedExpiredPlayer = null;
+  const resignButton = document.querySelector("#onlineResign");
+  const backToRoomButton = document.querySelector("#onlineBackToRoom");
 
   function setStatus(message, isError = false) {
     const statusEl = document.querySelector("#onlineGameStatus");
@@ -38,6 +40,41 @@
 
   function playerName(player) {
     return player === 1 ? "黒" : "白";
+  }
+
+  function resultMessage(result) {
+    if (!result || result.type !== "resign") return "";
+    return `${playerName(result.loser)}が投了しました。${playerName(result.winner)}の勝ちです。`;
+  }
+
+  function gameEnded(gameState = null) {
+    const clock = currentClock();
+    return Boolean(gameState?.gameOver || gameApi?.getState?.().gameOver || clock.timedOut !== null);
+  }
+
+  function updateOnlineActionButtons(gameState = null) {
+    const ended = gameEnded(gameState);
+    if (resignButton) {
+      resignButton.hidden = ended;
+      resignButton.disabled = ended || !ready || !roomRef;
+    }
+    if (backToRoomButton) backToRoomButton.hidden = !ended;
+  }
+
+  function navigateToRoomScreen() {
+    sessionStorage.removeItem(sessionKey);
+    if (window.parent && window.parent !== window && sessionStorage.getItem("othelloShellAudio") === "1") {
+      window.parent.postMessage({ type: "othello:navigate", path: "online.html", click: false }, "*");
+      return;
+    }
+    location.href = "online.html";
+  }
+
+  function resign() {
+    if (!gameApi || gameApi.getState().gameOver) return;
+    if (!confirm("投了しますか？")) return;
+    gameApi.endByResignation?.(playerColorValue());
+    updateOnlineActionButtons(gameApi.getState());
   }
 
   function formatTime(ms) {
@@ -142,6 +179,7 @@
       lastRenderedExpiredPlayer = expiredPlayer;
       gameApi?.render?.();
     }
+    updateOnlineActionButtons(gameApi?.getState?.());
     if (expiredPlayer !== null) publishTimeout(expiredPlayer, clock);
   }
 
@@ -211,7 +249,8 @@
       specialUsed: state.specialUsed,
       observeUsesLeft: state.observeUsesLeft,
       positionHistory: encodeHistory(state.positionHistory),
-      gameOver: Boolean(state.gameOver)
+      gameOver: Boolean(state.gameOver),
+      gameResult: state.gameResult || null
     };
   }
 
@@ -225,7 +264,8 @@
       specialUsed: gameState.specialUsed,
       observeUsesLeft: gameState.observeUsesLeft,
       positionHistory: decodeHistory(gameState.positionHistory),
-      gameOver: Boolean(gameState.gameOver)
+      gameOver: Boolean(gameState.gameOver),
+      gameResult: gameState.gameResult || null
     };
   }
 
@@ -295,13 +335,17 @@
 
     latestClock = normalizeClock(gameState.clock, gameState.turn);
     updateClockPanel();
+    updateOnlineActionButtons(gameState);
 
     const version = Number(gameState.version) || 0;
     const turnName = gameState.turn === gameApi.constants.B ? "黒" : "白";
     const myTurn = (session.playerColor === "black" && gameState.turn === gameApi.constants.B)
       || (session.playerColor === "white" && gameState.turn === gameApi.constants.W);
     const visibleClock = currentClock();
-    if (visibleClock.timedOut !== null) {
+    const resignedMessage = resultMessage(gameState.gameResult);
+    if (resignedMessage) {
+      setStatus(`${session.roomCode} に接続中です。${resignedMessage}`);
+    } else if (visibleClock.timedOut !== null) {
       setStatus(`${session.roomCode} に接続中です。${playerName(visibleClock.timedOut)}の時間切れです。`);
     } else {
       setStatus(`${session.roomCode} に接続中です。${turnName}番${myTurn ? "（あなたの番）" : "（相手の番）"}`);
@@ -360,6 +404,9 @@
     onRender: updateOnlineResourcePanel
   };
 
+  if (resignButton) resignButton.addEventListener("click", resign);
+  if (backToRoomButton) backToRoomButton.addEventListener("click", navigateToRoomScreen);
+
   document.addEventListener("quantum-othello:ready", event => {
     gameApi = event.detail;
     latestClock = defaultClock(gameApi.getState().turn);
@@ -367,6 +414,7 @@
     if (!roomRef) return;
     ready = true;
     setStatus(`${session.roomCode} に接続中です。`);
+    updateOnlineActionButtons(gameApi.getState());
     startClockTicker();
     unsubscribeRoom = roomRef.onSnapshot(applyRoomSnapshot, error => {
       setStatus(`部屋の監視に失敗しました: ${error.message}`, true);

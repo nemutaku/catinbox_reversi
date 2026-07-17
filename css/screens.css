@@ -35,6 +35,13 @@
     .title-menu button { width:100%; padding:15px 14px; border:1px solid #b6cbbd; border-radius:9px; background:#e7f0ea; color:var(--ink); font-weight:800; cursor:pointer; }
     .title-menu button.secondary { background:#e7f0ea; border:1px solid #b6cbbd; color:var(--ink); }
     .title-menu button:disabled { cursor:not-allowed; opacity:.5; }
+    .ai-setup-screen { width:min(520px,100%); display:grid; gap:18px; text-align:center; }
+    .ai-setup-panel { display:grid; gap:18px; padding:18px; border:1px solid #c7d8cc; border-radius:16px; background:linear-gradient(145deg,#ffffff,#f7fbf8); box-shadow:0 14px 30px #45615022; text-align:left; }
+    .ai-setup-group { display:grid; gap:10px; }
+    .ai-setup-group .panel-title { margin:0; }
+    .ai-setup-options { display:grid; gap:10px; }
+    .ai-setup-actions { display:grid; gap:10px; }
+    .ai-setup-actions .action { min-height:48px; }
     .options-screen { width:min(520px,100%); display:grid; gap:18px; }
     .options-title { display:block; margin:0; color:var(--ink); font-size:clamp(1.8rem,7vw,3rem); font-weight:850; text-align:center; }
     .options-panel { display:grid; gap:14px; padding:18px; border:1px solid #c7d8cc; border-radius:14px; background:#ffffff; box-shadow:0 14px 30px #45615022; }

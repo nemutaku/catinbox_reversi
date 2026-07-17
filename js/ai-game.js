@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   const playerColorKey = 'othelloAiPlayerColor';
   const difficultyKey = 'othelloAiDifficulty';
   const corners = new Set(['0,0', '0,7', '7,0', '7,7']);
@@ -513,17 +513,34 @@
     return weighted.length ? pickWeighted(weighted) : null;
   }
 
+  function openingTransformForFirstMove(state, canonicalFirst = 'F5') {
+    const canonicalPoint = coordToPoint(canonicalFirst);
+    const transforms = openingBookSource.policy?.transforms?.length
+      ? openingBookSource.policy.transforms
+      : ['identity'];
+    return transforms.find(transform => {
+      const point = transformPoint(canonicalPoint, transform);
+      return state.board[point.r]?.[point.c] === state.playerColor;
+    }) || null;
+  }
+
+  function transformedWeights(weightsByCanonicalCoord, transform) {
+    return Object.fromEntries(Object.entries(weightsByCanonicalCoord).map(([coord, weight]) => {
+      return [pointToCoord(transformPoint(coordToPoint(coord), transform)), weight];
+    }));
+  }
+
   function earlyPreferenceMove(state, difficulty) {
     if (!['normal', 'hard'].includes(difficulty)) return null;
     if (occupiedCount(state) !== 5) return null;
     if (state.playerColor !== 1 || state.aiColor !== -1) return null;
-    const firstMove = coordToPoint('F5');
-    if (state.board[firstMove.r][firstMove.c] !== state.playerColor) return null;
-    return weightedLegalMove(state, {
+    const transform = openingTransformForFirstMove(state);
+    if (!transform) return null;
+    return weightedLegalMove(state, transformedWeights({
       D6: 47,
       F6: 47,
       F4: 6
-    });
+    }, transform));
   }
 
   function openingLimit(difficulty) {
@@ -544,26 +561,38 @@
       })
       .map(line => ({ coord: line.sequence[ply], weight: line.weight }))
       .filter(item => item.coord);
-    const legalCandidates = state.legalMoves
-      .filter(move => !isRiskyMove(state, move, difficulty))
+    if (!candidates.length) return null;
+
+    const safeMoves = state.legalMoves.filter(move => !isRiskyMove(state, move, difficulty));
+    const legalPool = safeMoves.length ? safeMoves : state.legalMoves;
+    const ranked = legalPool
       .map(move => {
         const coord = pointToCoord(move);
         const matches = candidates.filter(item => item.coord === coord);
-        if (!matches.length) return null;
         const bookWeight = matches.reduce((sum, item) => sum + item.weight, 0);
-        return { move, bookWeight };
+        const bookBonusScale = ply <= 1 ? 0.09 : 0.025;
+        const bookBonus = bookWeight > 0 ? 8 + bookWeight * bookBonusScale : 0;
+        return {
+          move,
+          bookWeight,
+          score: positionalScore(state, move, difficulty) + bookBonus
+        };
       })
-      .filter(Boolean);
-    if (!legalCandidates.length) return null;
-    const ranked = legalCandidates
-      .map(item => ({
-        ...item,
-        score: positionalScore(state, item.move, difficulty) + item.bookWeight * (ply <= 1 ? 0.08 : 0.02)
-      }))
       .sort((a, b) => b.score - a.score);
+    if (!ranked.length) return null;
+
     const bestScore = ranked[0].score;
-    const goodMoves = ranked.filter(item => item.score >= bestScore - goodMoveBand);
-    return pickWeighted(goodMoves.map(item => ({ move: item.move, weight: Math.max(1, item.bookWeight) })));
+    let goodMoves = ranked
+      .filter(item => item.score >= bestScore - goodMoveBand)
+      .slice(0, difficulty === 'hard' ? 4 : 5);
+    if (goodMoves.length < 2 && ranked[1] && ranked[1].score >= bestScore - goodMoveBand * 1.8) {
+      goodMoves = [ranked[0], ranked[1]];
+    }
+
+    return pickWeighted(goodMoves.map((item, index) => ({
+      move: item.move,
+      weight: Math.max(1, 12 + item.bookWeight * (ply <= 1 ? 0.9 : 0.35) + (goodMoves.length - index) * 4)
+    })));
   }
 
   function boardScore(board, aiColor, playerColor, difficulty, objective) {
@@ -730,6 +759,7 @@
     mode: 'ai',
     optionsFrom: 'ai',
     stateScope: 'ai',
+    newGamePath: 'ai-setup.html',
     getPlayerColor,
     getDifficulty,
     chooseAiAction,
@@ -780,3 +810,4 @@
   setupDifficultyControls();
   document.addEventListener('quantum-othello:ready', onGameReady);
 })();
+

@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   const rules = window.OthelloRules;
   const { E, B, W } = rules.constants;
   const { copy, emptyObservedBoard, normalizeObservedBoard, moves, applyMove } = rules;
@@ -23,6 +23,7 @@
   const elements = {
     gameScreen: document.querySelector('#gameScreen'),
     boardWrap: document.querySelector('.board-wrap'),
+    result: document.querySelector('#gameResult'),
     blackScore: document.querySelector('#blackScore'),
     whiteScore: document.querySelector('#whiteScore'),
     turn: document.querySelector('#turn'),
@@ -37,7 +38,7 @@
     newGame: document.querySelector('#newGame')
   };
 
-  let board, probBoard, observedBoard, turn, lastMove = null, undoStack = [], positionHistory = [], reviewIndex = null, gameOver = false, finalObservationRunning = false;
+  let board, probBoard, observedBoard, turn, lastMove = null, undoStack = [], positionHistory = [], reviewIndex = null, gameOver = false, finalObservationRunning = false, gameResult = null;
   let selectedSpecial = null;
   let specialUsed;
   let faceToFace = false;
@@ -70,6 +71,39 @@
   const canUseLocalControls = () => !isOnlineMode() || (!isOnlineRemoteTurn() && !isOnlineClockExpired());
   const colorName = color => color === B ? 'black' : 'white';
   const observationPopImage = event => `assets/images/cat_pop_${colorName(event.beforeColor)}box_${colorName(event.afterColor)}cat.png`;
+  function ensureResultElement() {
+    if (elements.result) return elements.result;
+    const score = elements.blackScore?.closest('.score');
+    if (!score) return null;
+    const result = document.createElement('p');
+    result.id = 'gameResult';
+    result.className = 'game-result';
+    result.setAttribute('aria-live', 'polite');
+    score.insertAdjacentElement('beforebegin', result);
+    elements.result = result;
+    return result;
+  }
+
+  function buildGameResultText() {
+    if (!gameOver || finalObservationRunning) return '';
+    if (gameResult?.type === 'resign') {
+      return `${stoneName(gameResult.winner)}の勝ち(投了)`;
+    }
+    const black = count(B);
+    const white = count(W);
+    if (black === white) return '引き分け';
+    const winner = black > white ? B : W;
+    const diff = Math.abs(black - white);
+    return `${stoneName(winner)}の勝ち(${diff}ねこ差)`;
+  }
+
+  function renderGameResult() {
+    const result = ensureResultElement();
+    if (!result) return;
+    const text = buildGameResultText();
+    result.textContent = text;
+    result.hidden = !text;
+  }
   let applyingRemoteState = false;
 
   function saveGameState() {
@@ -85,6 +119,7 @@
       positionHistory,
       reviewIndex,
       gameOver,
+      gameResult,
       selectedSpecial,
       specialUsed,
       faceToFace,
@@ -113,6 +148,7 @@
     undoStack = state.undoStack;
     positionHistory = state.positionHistory;
     gameOver = state.gameOver;
+    gameResult = state.gameResult || null;
     reviewIndex = gameOver ? state.reviewIndex : null;
     selectedSpecial = state.selectedSpecial;
     specialUsed = state.specialUsed;
@@ -227,6 +263,7 @@
     elements.observe.disabled = reviewing || gameOver || finalObservationRunning || aiThinking || remoteTurn || clockExpired || observeUsesLeft[turn] <= 0;
     renderSpecialControls(reviewing || finalObservationRunning || aiThinking || remoteTurn || clockExpired);
     renderFaceToFaceControl();
+    renderGameResult();
     window.OthelloGameView.updateReviewControls(reviewControls, {
       gameOver,
       finalObservationRunning,
@@ -306,6 +343,23 @@
       notifyStateChange('final-observe');
     });
   }
+
+  function endByResignation(loser, options = {}) {
+    if (gameOver) return;
+    const safeLoser = loser === W ? W : B;
+    const winner = -safeLoser;
+    gameOver = true;
+    gameResult = { type: 'resign', loser: safeLoser, winner };
+    finalObservationRunning = false;
+    observingShaking = false;
+    observationPops = {};
+    selectedSpecial = null;
+    reviewIndex = positionHistory.length ? positionHistory.length - 1 : null;
+    status(`${safeLoser === B ? '\u9ed2' : '\u767d'}\u304c\u6295\u4e86\u3057\u307e\u3057\u305f\u3002${winner === B ? '\u9ed2' : '\u767d'}\u306e\u52dd\u3061\u3067\u3059\u3002`);
+    render();
+    if (options.notify !== false) notifyStateChange('resign');
+  }
+
   function advance() {
     const legal = moves(board, turn);
     if (!legal.length) {
@@ -423,6 +477,7 @@
     const nextObservedBoard = normalizeObservedBoard(state.observedBoard);
     applyingRemoteState = true;
     gameOver = false;
+    gameResult = null;
     reviewIndex = null;
     finalObservationRunning = true;
     observingShaking = true;
@@ -510,6 +565,7 @@
     selectedSpecial = state.selectedSpecial;
     observeUsesLeft = state.observeUsesLeft;
     gameOver = false;
+    gameResult = null;
     finalObservationRunning = false;
     observingShaking = false;
     observationPops = {};
@@ -531,6 +587,7 @@
     positionHistory = [];
     reviewIndex = null;
     gameOver = false;
+    gameResult = null;
     finalObservationRunning = false;
     observingShaking = false;
     observationPops = {};
@@ -590,6 +647,7 @@
       turn: item.turn === W ? W : B
     })) : [snapshot()];
     gameOver = Boolean(state.gameOver);
+    gameResult = state.gameResult || null;
     reviewIndex = gameOver ? positionHistory.length - 1 : null;
     finalObservationRunning = false;
     observingShaking = false;
@@ -611,6 +669,7 @@
       aiColor: aiColorValue(),
       isAiTurn: isAiTurn(),
       gameOver,
+      gameResult,
       legalMoves,
       selectedSpecial,
       specialUsed: copySpecialUsed(),
@@ -638,11 +697,32 @@
     getState: getGameState,
     applyExternalState,
     playExternalObservationAnimation,
+    endByResignation,
     start,
     render
   };
 
-  if (elements.newGame) elements.newGame.onclick = start;
+  function navigateTo(path, { clearState = false, pauseBgm = false } = {}) {
+    if (clearState) clearGameState();
+    if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') {
+      window.parent.postMessage({ type: 'othello:navigate', path, click: false }, '*');
+      return;
+    }
+    if (pauseBgm) {
+      audio.clearBgmState();
+      audio.primeNextPage();
+      audio.pauseBgm();
+    }
+    location.href = path;
+  }
+
+  if (elements.newGame) elements.newGame.onclick = () => {
+    if (gameConfig.newGamePath) {
+      navigateTo(gameConfig.newGamePath, { clearState: true });
+      return;
+    }
+    start();
+  };
   if (elements.undo) elements.undo.onclick = undo;
   elements.observe.onclick = observe;
   elements.special100.onclick = () => selectSpecial(100);
@@ -664,15 +744,7 @@
     location.href = `options.html?from=${encodeURIComponent(gameConfig.optionsFrom)}`;
   };
   if (elements.modeSelectButton) elements.modeSelectButton.onclick = () => {
-    clearGameState();
-    if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') {
-      window.parent.postMessage({ type: 'othello:navigate', path: 'mode-select.html', click: false }, '*');
-      return;
-    }
-    audio.clearBgmState();
-    audio.primeNextPage();
-    audio.pauseBgm();
-    location.href = 'mode-select.html';
+    navigateTo('mode-select.html', { clearState: true, pauseBgm: true });
   };
   document.addEventListener('click', (event) => {
     if (event.target.closest('button.action')) audio.playSound(sounds.uiClick, 0.55);
@@ -686,3 +758,5 @@
   audio.startBgmAfterPageTransition();
   document.dispatchEvent(new CustomEvent('quantum-othello:ready', { detail: window.quantumOthelloGame }));
 })();
+
+

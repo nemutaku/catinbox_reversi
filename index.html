@@ -21,7 +21,7 @@
 
 <div id="shellFade" class="shell-fade" aria-hidden="true"></div>
 
-<script src="js/audio.js?v=20260726-audio-volume-2"></script>
+<script src="js/audio.js"></script>
 <script>
 (() => {
   const audioSettingsKey = 'othelloAudioSettings';
@@ -112,18 +112,11 @@
   }
 
   function applyBgmVolume(settings = getAudioSettings()) {
-    bgm.volume = window.OthelloAudio?.volumeWithGain
-      ? window.OthelloAudio.volumeWithGain(settings.bgmVolume, bgmGain)
-      : Math.max(0, Math.min(1, settings.bgmVolume * bgmGain));
+    bgm.volume = settings.bgmVolume * bgmGain;
   }
 
-  function applyAudioSettings(nextSettings = null) {
-    const settings = nextSettings && typeof nextSettings === 'object'
-      ? { ...getAudioSettings(), ...nextSettings }
-      : getAudioSettings();
-    if (nextSettings && typeof nextSettings === 'object') {
-      window.OthelloAudio?.applyAudioSettings?.(settings);
-    }
+  function applyAudioSettings() {
+    const settings = getAudioSettings();
     applyBgmVolume(settings);
     if (!settings.bgmEnabled) {
       bgm.pause();
@@ -220,7 +213,7 @@
       navigate(data.path, { click: data.click !== false });
     }
     if (data.type === 'othello:audio-settings') {
-      applyAudioSettings(data.settings);
+      applyAudioSettings();
     }
     if (data.type === 'othello:bgm-type' && (data.bgmType === 'title' || data.bgmType === 'match')) {
       startBgm(data.bgmType);

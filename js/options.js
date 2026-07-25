@@ -99,19 +99,13 @@
 
   function restoreAudibleOptionBgm() {
     const settings = loadSettings();
-    optionBgm.volume = audioApi.volumeWithGain(settings.bgmVolume, bgmGain);
+    optionBgm.volume = settings.bgmVolume * bgmGain;
     optionBgm.muted = false;
-  }
-
-  function notifyShellAudioSettings(settings) {
-    if (!shell) return;
-    window.parent.OthelloShell?.refreshAudioSettings?.(settings);
-    window.parent.postMessage({ type: 'othello:audio-settings', settings }, '*');
   }
 
   function syncOptionBgm(settings, preferSelectedMatch = false, primeMuted = false) {
     if (shell) {
-      notifyShellAudioSettings(settings);
+      window.parent.postMessage({ type: 'othello:audio-settings' }, '*');
       return;
     }
     if (preferSelectedMatch) resetBgmStateToSelectedMatch(settings);
@@ -122,7 +116,7 @@
       optionBgm.src = nextSrc;
       optionResumeApplied = false;
     }
-    optionBgm.volume = audioApi.volumeWithGain(settings.bgmVolume, bgmGain);
+    optionBgm.volume = settings.bgmVolume * bgmGain;
     optionBgm.muted = primeMuted;
     if (preferSelectedMatch) optionBgm.currentTime = 0;
     if (!settings.bgmEnabled) {
@@ -149,6 +143,7 @@
     const settings = readControls();
     saveSettings(settings);
     updateLabels(settings);
+    if (shell) window.parent.postMessage({ type: 'othello:audio-settings' }, '*');
     syncOptionBgm(settings, false);
   }
 
@@ -168,7 +163,7 @@
     const settings = loadSettings();
     if (!settings.seEnabled) return;
     const sound = new Audio('assets/audio/se/box-place.mp3');
-    sound.volume = audioApi.volumeWithGain(settings.seVolume, 0.7 * seGain);
+    sound.volume = Math.min(1, 0.7 * settings.seVolume * seGain);
     sound.play().catch(() => {});
   }
 
@@ -184,10 +179,7 @@
   const primeOptionBgm = document.documentElement.classList.contains('page-entering') || sessionStorage.getItem(audioPrimeKey) === '1';
   sessionStorage.removeItem(audioPrimeKey);
   syncOptionBgm(loadSettings(), false, primeOptionBgm);
-  document.querySelectorAll('input').forEach(input => {
-    input.addEventListener('input', onChange);
-    input.addEventListener('change', onChange);
-  });
+  document.querySelectorAll('input').forEach(input => input.addEventListener('input', onChange));
   controls.matchBgmButtons.forEach(button => button.addEventListener('click', () => selectMatchBgm(button)));
   document.querySelector('#testSe').addEventListener('click', playSeTest);
   document.querySelector('#backButton').addEventListener('click', () => {

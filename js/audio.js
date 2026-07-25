@@ -5,6 +5,7 @@
   const matchBgmFiles = new Set(['match-01.mp3', 'match-02.mp3']);
   const seGain = 2;
   const defaults = { bgmEnabled: true, seEnabled: true, bgmVolume: 0.45, seVolume: 0.7, matchBgm: 'match-01.mp3' };
+  let runtimeSettings = null;
   const sounds = {
     stonePlace: 'assets/audio/se/box-place.mp3',
     observeStart: 'assets/audio/se/box-open.mp3',
@@ -12,16 +13,48 @@
     uiClick: 'assets/audio/se/ui-click.mp3'
   };
 
+  function clampVolume(value, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(0, Math.min(1, number));
+  }
+
+  function normalizeAudioSettings(settings = {}) {
+    return {
+      ...defaults,
+      ...settings,
+      bgmEnabled: settings.bgmEnabled !== false,
+      seEnabled: settings.seEnabled !== false,
+      bgmVolume: clampVolume(settings.bgmVolume, defaults.bgmVolume),
+      seVolume: clampVolume(settings.seVolume, defaults.seVolume),
+      matchBgm: matchBgmFiles.has(settings.matchBgm) ? settings.matchBgm : defaults.matchBgm
+    };
+  }
+
   function getAudioSettings() {
+    if (runtimeSettings) return { ...runtimeSettings };
     try {
-      return { ...defaults, ...JSON.parse(localStorage.getItem(audioSettingsKey) || '{}') };
+      runtimeSettings = normalizeAudioSettings(JSON.parse(localStorage.getItem(audioSettingsKey) || '{}'));
+      return { ...runtimeSettings };
     } catch {
-      return defaults;
+      runtimeSettings = normalizeAudioSettings();
+      return { ...runtimeSettings };
     }
   }
 
   function saveAudioSettings(settings) {
-    localStorage.setItem(audioSettingsKey, JSON.stringify(settings));
+    runtimeSettings = normalizeAudioSettings({ ...getAudioSettings(), ...settings });
+    localStorage.setItem(audioSettingsKey, JSON.stringify(runtimeSettings));
+    window.dispatchEvent(new CustomEvent('othello:audio-settings-changed', { detail: { ...runtimeSettings } }));
+  }
+
+  function applyAudioSettings(settings) {
+    runtimeSettings = normalizeAudioSettings({ ...getAudioSettings(), ...settings });
+    window.dispatchEvent(new CustomEvent('othello:audio-settings-changed', { detail: { ...runtimeSettings } }));
+  }
+
+  function volumeWithGain(volume, gain = 1) {
+    return Math.max(0, Math.min(1, Number(volume) * gain));
   }
 
   function bgmPath(fileName) {
@@ -52,7 +85,7 @@
     let bgmResumeApplied = false;
     function restoreAudibleBgm() {
       const settings = getAudioSettings();
-      bgm.volume = settings.bgmVolume * bgmGain;
+      bgm.volume = volumeWithGain(settings.bgmVolume, bgmGain);
       bgm.muted = false;
     }
 
@@ -76,7 +109,7 @@
       const savedState = readBgmState();
       bgm.src = savedState && savedState.src && savedState.src.includes('/bgm/match-') ? savedState.src : bgmPath(settings.matchBgm);
       applySavedBgmPosition();
-      bgm.volume = settings.bgmVolume * bgmGain;
+      bgm.volume = volumeWithGain(settings.bgmVolume, bgmGain);
       bgm.muted = primeMuted;
       bgmStarted = true;
       bgm.play()
@@ -112,7 +145,7 @@
       const settings = getAudioSettings();
       if (!settings.seEnabled) return;
       const sound = new Audio(src);
-      sound.volume = Math.min(1, volume * settings.seVolume * seGain);
+      sound.volume = volumeWithGain(settings.seVolume, volume * seGain);
       sound.play().catch(() => {});
     }
 
@@ -124,12 +157,14 @@
         bgm.src = nextSrc;
         if (wasPlaying && settings.bgmEnabled) bgm.play().catch(() => {});
       }
-      bgm.volume = settings.bgmVolume * bgmGain;
+      bgm.volume = volumeWithGain(settings.bgmVolume, bgmGain);
       if (!settings.bgmEnabled) {
         bgm.pause();
         bgmStarted = false;
       }
     }
+
+    window.addEventListener('othello:audio-settings-changed', syncBgmSettings);
 
     return {
       sounds,
@@ -148,6 +183,8 @@
     matchBgmFiles,
     getAudioSettings,
     saveAudioSettings,
+    applyAudioSettings,
+    volumeWithGain,
     bgmPath,
     readBgmState,
     writeBgmState,

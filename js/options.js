@@ -99,12 +99,13 @@
 
   function restoreAudibleOptionBgm() {
     const settings = loadSettings();
-    optionBgm.volume = settings.bgmVolume * bgmGain;
+    optionBgm.volume = audioApi.volumeWithGain(settings.bgmVolume, bgmGain);
     optionBgm.muted = false;
   }
 
   function notifyShellAudioSettings(settings) {
     if (!shell) return;
+    window.parent.OthelloShell?.refreshAudioSettings?.(settings);
     window.parent.postMessage({ type: 'othello:audio-settings', settings }, '*');
   }
 
@@ -121,7 +122,7 @@
       optionBgm.src = nextSrc;
       optionResumeApplied = false;
     }
-    optionBgm.volume = settings.bgmVolume * bgmGain;
+    optionBgm.volume = audioApi.volumeWithGain(settings.bgmVolume, bgmGain);
     optionBgm.muted = primeMuted;
     if (preferSelectedMatch) optionBgm.currentTime = 0;
     if (!settings.bgmEnabled) {
@@ -167,7 +168,7 @@
     const settings = loadSettings();
     if (!settings.seEnabled) return;
     const sound = new Audio('assets/audio/se/box-place.mp3');
-    sound.volume = Math.min(1, 0.7 * settings.seVolume * seGain);
+    sound.volume = audioApi.volumeWithGain(settings.seVolume, 0.7 * seGain);
     sound.play().catch(() => {});
   }
 

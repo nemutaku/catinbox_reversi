@@ -27,15 +27,14 @@
     <button id="titleBack" type="button" class="secondary">タイトルへ戻る</button>
   </div>
 </section>
-<script src="js/audio.js"></script>
+<script src="js/audio.js?v=20260726-webaudio-1"></script>
 <script>
   const audioSettingsKey = 'othelloAudioSettings';
   const audioStateKey = 'othelloBgmState';
   const audioPrimeKey = 'othelloAudioPrime';
   const titleBgmPath = 'assets/audio/bgm/title-01.mp3';
   const bgmGain = 0.5;
-  const titleBgm = new Audio(titleBgmPath);
-  titleBgm.loop = true;
+  const titleBgm = window.OthelloAudio.createBgmController({ initialSrc: titleBgmPath, bgmGain });
   const clickAudio = window.OthelloAudio?.createMatchAudioController?.();
   let titleBgmStarted = false;
   let titleResumeApplied = false;
@@ -81,8 +80,8 @@
 
   const restoreAudibleTitleBgm = () => {
     const settings = getAudioSettings();
-    titleBgm.volume = settings.bgmVolume * bgmGain;
     titleBgm.muted = false;
+    titleBgm.applyVolume(settings);
   };
 
   const startTitleBgm = (primeMuted = false) => {
@@ -90,8 +89,8 @@
     const settings = getAudioSettings();
     if (!settings.bgmEnabled || titleBgmStarted) return;
     applySavedBgmPosition();
-    titleBgm.volume = settings.bgmVolume * bgmGain;
     titleBgm.muted = primeMuted;
+    titleBgm.applyVolume(settings);
     titleBgmStarted = true;
     titleBgm.play()
       .then(() => {

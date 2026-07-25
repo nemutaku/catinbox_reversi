@@ -11,6 +11,30 @@
     observeChange: 'assets/audio/se/meow.mp3',
     uiClick: 'assets/audio/se/ui-click.mp3'
   };
+  const bufferCache = new Map();
+  let audioContext = null;
+
+  function clamp(value, fallback = 0) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(0, Math.min(1, number));
+  }
+
+  function getAudioContext() {
+    if (!audioContext) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return null;
+      audioContext = new AudioContextClass();
+    }
+    return audioContext;
+  }
+
+  function resumeAudioContext() {
+    const context = getAudioContext();
+    if (!context) return Promise.resolve(null);
+    if (context.state === 'suspended') return context.resume().then(() => context);
+    return Promise.resolve(context);
+  }
 
   function getAudioSettings() {
     try {
@@ -22,6 +46,10 @@
 
   function saveAudioSettings(settings) {
     localStorage.setItem(audioSettingsKey, JSON.stringify(settings));
+  }
+
+  function volumeWithGain(volume, gain = 1) {
+    return clamp(volume, 0) * gain;
   }
 
   function bgmPath(fileName) {
@@ -44,16 +72,153 @@
     }));
   }
 
+  function loadArrayBuffer(src) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open('GET', src, true);
+      request.responseType = 'arraybuffer';
+      request.onload = () => {
+        if (request.status === 0 || (request.status >= 200 && request.status < 300)) resolve(request.response);
+        else reject(new Error(`Audio load failed: ${src}`));
+      };
+      request.onerror = reject;
+      request.send();
+    });
+  }
+
+  async function loadAudioBuffer(src) {
+    if (bufferCache.has(src)) return bufferCache.get(src);
+    const context = await resumeAudioContext();
+    if (!context) throw new Error('Web Audio API is not available.');
+    const arrayBuffer = await loadArrayBuffer(src);
+    const buffer = await context.decodeAudioData(arrayBuffer);
+    bufferCache.set(src, buffer);
+    return buffer;
+  }
+
+  function playBufferedSound(src, volume = 0.7) {
+    const settings = getAudioSettings();
+    if (!settings.seEnabled) return;
+    loadAudioBuffer(src)
+      .then(buffer => {
+        const context = getAudioContext();
+        if (!context) return;
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        source.buffer = buffer;
+        gain.gain.value = Math.min(1, volumeWithGain(settings.seVolume, volume * seGain));
+        source.connect(gain);
+        gain.connect(context.destination);
+        source.start(0);
+      })
+      .catch(() => playElementSound(src, volume, settings));
+  }
+
+  function playElementSound(src, volume = 0.7, settings = getAudioSettings()) {
+    const context = getAudioContext();
+    if (!context) return;
+    const element = new Audio(src);
+    element.preload = 'auto';
+    element.volume = 1;
+    const source = context.createMediaElementSource(element);
+    const gain = context.createGain();
+    gain.gain.value = Math.min(1, volumeWithGain(settings.seVolume, volume * seGain));
+    source.connect(gain);
+    gain.connect(context.destination);
+    const cleanup = () => {
+      source.disconnect();
+      gain.disconnect();
+    };
+    element.addEventListener('ended', cleanup, { once: true });
+    element.addEventListener('error', cleanup, { once: true });
+    resumeAudioContext()
+      .then(() => element.play())
+      .catch(cleanup);
+  }
+
+  function createBgmController({ initialSrc = '', loop = true, bgmGain = 0.5 } = {}) {
+    const element = new Audio(initialSrc);
+    element.loop = loop;
+    element.preload = 'auto';
+    element.volume = 1;
+    let sourceNode = null;
+    let gainNode = null;
+    let mutedByGain = false;
+
+    function connect() {
+      const context = getAudioContext();
+      if (!context) return null;
+      if (!sourceNode) {
+        sourceNode = context.createMediaElementSource(element);
+        gainNode = context.createGain();
+        sourceNode.connect(gainNode);
+        gainNode.connect(context.destination);
+      }
+      return context;
+    }
+
+    function applyVolume(settings = getAudioSettings()) {
+      connect();
+      if (!gainNode) return;
+      gainNode.gain.value = mutedByGain ? 0 : Math.min(1, volumeWithGain(settings.bgmVolume, bgmGain));
+    }
+
+    function play() {
+      connect();
+      applyVolume();
+      return resumeAudioContext().then(() => element.play());
+    }
+
+    function pause() {
+      element.pause();
+    }
+
+    const controller = {
+      play,
+      pause,
+      applyVolume,
+      addEventListener: (...args) => element.addEventListener(...args),
+      getAttribute: name => element.getAttribute(name),
+      setAttribute: (...args) => element.setAttribute(...args)
+    };
+
+    Object.defineProperties(controller, {
+      src: {
+        get: () => element.src,
+        set: value => {
+          element.src = value;
+        }
+      },
+      currentTime: {
+        get: () => element.currentTime,
+        set: value => {
+          element.currentTime = value;
+        }
+      },
+      duration: { get: () => element.duration },
+      readyState: { get: () => element.readyState },
+      paused: { get: () => element.paused },
+      muted: {
+        get: () => mutedByGain,
+        set: value => {
+          mutedByGain = Boolean(value);
+          applyVolume();
+        }
+      }
+    });
+
+    return controller;
+  }
+
   function createMatchAudioController({ bgmGain = 0.5 } = {}) {
     const useShellBgm = () => window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1';
-    const bgm = new Audio();
-    bgm.loop = true;
+    const bgm = createBgmController({ bgmGain });
     let bgmStarted = false;
     let bgmResumeApplied = false;
+
     function restoreAudibleBgm() {
-      const settings = getAudioSettings();
-      bgm.volume = settings.bgmVolume * bgmGain;
       bgm.muted = false;
+      bgm.applyVolume(getAudioSettings());
     }
 
     function applySavedBgmPosition() {
@@ -76,8 +241,8 @@
       const savedState = readBgmState();
       bgm.src = savedState && savedState.src && savedState.src.includes('/bgm/match-') ? savedState.src : bgmPath(settings.matchBgm);
       applySavedBgmPosition();
-      bgm.volume = settings.bgmVolume * bgmGain;
       bgm.muted = primeMuted;
+      bgm.applyVolume(settings);
       bgmStarted = true;
       bgm.play()
         .then(() => {
@@ -108,14 +273,6 @@
       });
     }
 
-    function playSound(src, volume = 0.7) {
-      const settings = getAudioSettings();
-      if (!settings.seEnabled) return;
-      const sound = new Audio(src);
-      sound.volume = Math.min(1, volume * settings.seVolume * seGain);
-      sound.play().catch(() => {});
-    }
-
     function syncBgmSettings() {
       const settings = getAudioSettings();
       const nextSrc = bgmPath(settings.matchBgm);
@@ -124,7 +281,7 @@
         bgm.src = nextSrc;
         if (wasPlaying && settings.bgmEnabled) bgm.play().catch(() => {});
       }
-      bgm.volume = settings.bgmVolume * bgmGain;
+      bgm.applyVolume(settings);
       if (!settings.bgmEnabled) {
         bgm.pause();
         bgmStarted = false;
@@ -135,7 +292,7 @@
       sounds,
       startBgmAfterPageTransition,
       saveBgmState,
-      playSound,
+      playSound: playBufferedSound,
       syncBgmSettings,
       primeNextPage: () => sessionStorage.setItem(audioPrimeKey, '1'),
       clearBgmState: () => sessionStorage.removeItem(audioStateKey),
@@ -148,9 +305,12 @@
     matchBgmFiles,
     getAudioSettings,
     saveAudioSettings,
+    volumeWithGain,
     bgmPath,
     readBgmState,
     writeBgmState,
+    playSound: playBufferedSound,
+    createBgmController,
     createMatchAudioController,
     keys: { audioSettingsKey, audioStateKey, audioPrimeKey },
     sounds

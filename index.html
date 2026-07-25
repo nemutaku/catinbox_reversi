@@ -21,7 +21,7 @@
 
 <div id="shellFade" class="shell-fade" aria-hidden="true"></div>
 
-<script src="js/audio.js"></script>
+<script src="js/audio.js?v=20260726-webaudio-1"></script>
 <script>
 (() => {
   const audioSettingsKey = 'othelloAudioSettings';
@@ -35,9 +35,8 @@
   const shellScreen = document.querySelector('#shellScreen');
   const screenFrame = document.querySelector('#screenFrame');
   const shellFade = document.querySelector('#shellFade');
-  const bgm = new Audio(titleBgmPath);
+  const bgm = window.OthelloAudio.createBgmController({ initialSrc: titleBgmPath, bgmGain });
   const clickAudio = window.OthelloAudio?.createMatchAudioController?.();
-  bgm.loop = true;
   let bgmStarted = false;
   let currentBgmType = 'title';
   let transitioning = false;
@@ -112,7 +111,7 @@
   }
 
   function applyBgmVolume(settings = getAudioSettings()) {
-    bgm.volume = settings.bgmVolume * bgmGain;
+    bgm.applyVolume(settings);
   }
 
   function applyAudioSettings() {

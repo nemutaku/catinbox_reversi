@@ -4,7 +4,6 @@
   const { audioPrimeKey } = audioApi.keys;
   const restoreGameFlagKey = 'othelloRestoreLocalGame';
   const bgmGain = 0.5;
-  const seGain = 2;
   const defaults = audioApi.defaults;
   const controls = {
     bgmEnabled: document.querySelector('#bgmEnabled'),
@@ -15,8 +14,7 @@
     bgmValue: document.querySelector('#bgmValue'),
     seValue: document.querySelector('#seValue')
   };
-  const optionBgm = new Audio();
-  optionBgm.loop = true;
+  const optionBgm = audioApi.createBgmController({ bgmGain });
   let optionBgmStarted = false;
   let optionResumeApplied = false;
   const matchBgmFiles = audioApi.matchBgmFiles;
@@ -99,8 +97,8 @@
 
   function restoreAudibleOptionBgm() {
     const settings = loadSettings();
-    optionBgm.volume = settings.bgmVolume * bgmGain;
     optionBgm.muted = false;
+    optionBgm.applyVolume(settings);
   }
 
   function syncOptionBgm(settings, preferSelectedMatch = false, primeMuted = false) {
@@ -116,8 +114,8 @@
       optionBgm.src = nextSrc;
       optionResumeApplied = false;
     }
-    optionBgm.volume = settings.bgmVolume * bgmGain;
     optionBgm.muted = primeMuted;
+    optionBgm.applyVolume(settings);
     if (preferSelectedMatch) optionBgm.currentTime = 0;
     if (!settings.bgmEnabled) {
       optionBgm.pause();
@@ -162,9 +160,7 @@
   function playSeTest() {
     const settings = loadSettings();
     if (!settings.seEnabled) return;
-    const sound = new Audio('assets/audio/se/box-place.mp3');
-    sound.volume = Math.min(1, 0.7 * settings.seVolume * seGain);
-    sound.play().catch(() => {});
+    audioApi.playSound?.('assets/audio/se/box-place.mp3', 0.7);
   }
 
   function backPath() {

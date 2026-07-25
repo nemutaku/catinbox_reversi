@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - 意見箱</title>
+  <link rel="stylesheet" href="style.css?v=20260725-feedback-1">
+</head>
+<body>
+<main class="feedback-screen">
+  <h1 class="title-logo">意見箱</h1>
+  <section class="feedback-panel" aria-label="意見箱">
+    <p class="feedback-lead">不具合・バグの報告、ゲームへの意見、眠澤へのコメントなんでもどうぞ！<br>※1000文字まで入力可</p>
+    <textarea id="feedbackText" class="feedback-text" maxlength="1000" rows="8" aria-label="意見の入力欄"></textarea>
+    <p id="feedbackStatus" class="feedback-status" aria-live="polite"></p>
+    <div class="feedback-actions">
+      <button id="backButton" type="button" class="secondary">戻る</button>
+      <button id="sendButton" type="button">送信</button>
+    </div>
+  </section>
+</main>
+
+<script>
+  window.showFeedbackScriptError = function () {
+    const status = document.querySelector('#feedbackStatus');
+    if (!status) return;
+    status.textContent = '送信機能の読み込みに失敗しました。通信環境を確認してください。';
+    status.classList.add('error');
+  };
+</script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js" onerror="showFeedbackScriptError()"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-auth-compat.js" onerror="showFeedbackScriptError()"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js" onerror="showFeedbackScriptError()"></script>
+<script src="js/audio.js"></script>
+<script src="js/firebase-config.js?v=20260715-1"></script>
+<script src="js/feedback.js?v=20260725-feedback-1"></script>
+</body>
+</html>

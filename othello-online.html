@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - オンライン対局</title>
+  <link rel="stylesheet" href="style.css?v=20260725-review-fixes-1">
+</head>
+<body>
+<script>
+window.addEventListener("error", event => {
+  const status = document.getElementById("onlineGameStatus");
+  if (status) status.textContent = "オンライン対局の読み込みに失敗しました。ページを再読み込みして、もう一度お試しください。";
+});
+window.addEventListener("unhandledrejection", event => {
+  const status = document.getElementById("onlineGameStatus");
+  if (status) status.textContent = "オンライン対局の読み込みに失敗しました。ページを再読み込みして、もう一度お試しください。";
+});
+</script>
+<main id="gameScreen" class="online-game-screen">
+  <div class="layout online-layout">
+    <div class="board-column">
+      <div class="score">
+        <div class="count cat-score black-score">
+          <span class="score-icons" aria-hidden="true"><img src="assets/images/blackcat_normal.png" alt=""><img src="assets/images/blackbox_normal.png" alt=""></span>
+          <b id="blackScore">2</b>
+        </div>
+        <div class="count cat-score white-score">
+          <span class="score-icons" aria-hidden="true"><img src="assets/images/whitecat_normal.png" alt=""><img src="assets/images/whitebox_normal.png" alt=""></span>
+          <b id="whiteScore">2</b>
+        </div>
+      </div>
+      <section class="online-resource-panel" aria-label="相手のあと回数">
+        <h2 class="panel-title">相手のあと回数</h2>
+        <div class="resource-grid">
+          <div class="resource-item wide"><span>あいて オープン！</span><b id="onlineOpponentObserveLeft">あと2回</b></div>
+          <div class="resource-item"><span>あいて 100%はこ</span><b id="onlineOpponentSpecial100">あと2回</b></div>
+          <div class="resource-item"><span>あいて 0%はこ</span><b id="onlineOpponentSpecial0">あと2回</b></div>
+        </div>
+      </section>
+      <section class="board-wrap" aria-label="オセロ盤">
+        <div class="coord-top" aria-hidden="true"><span></span><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+        <div class="board-row">
+          <div class="coord-left" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+          <div id="board" role="grid" aria-label="オセロ盤"></div>
+        </div>
+      </section>
+      <div class="special-actions online-play-actions" aria-label="特殊はこ">
+        <button id="observe" class="action secondary" type="button">オープン！(あと2回)</button>
+        <button id="special100" class="action secondary" type="button">100%はこ</button>
+        <button id="special0" class="action secondary" type="button">0%はこ</button>
+      </div>
+    </div>
+    <aside>
+      <section class="panel online-clock-panel" aria-label="制限時間">
+        <h2 class="panel-title">制限時間</h2>
+        <div class="clock-grid">
+          <div class="clock-item" data-clock-player="black"><span>黒</span><em id="onlineBlackTitle" class="player-title-badge">新米ねこ</em><strong id="onlineBlackName" class="online-player-name">--</strong><b id="onlineBlackClock">5:00</b><em id="onlineBlackDisconnect" class="disconnect-notice" hidden>接続切れ</em></div>
+          <div class="clock-item" data-clock-player="white"><span>白</span><em id="onlineWhiteTitle" class="player-title-badge">新米ねこ</em><strong id="onlineWhiteName" class="online-player-name">--</strong><b id="onlineWhiteClock">5:00</b><em id="onlineWhiteDisconnect" class="disconnect-notice" hidden>接続切れ</em></div>
+        </div>
+      </section>
+      <section class="online-game-actions" aria-label="オンライン対局操作">
+        <button id="onlineResign" class="action secondary" type="button">投了する</button>
+        <button id="onlineBackToRoom" class="action" type="button" hidden>ルーム作成画面へ戻る</button>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<div id="resignConfirm" class="resign-confirm" hidden>
+  <section class="resign-confirm-panel" role="dialog" aria-modal="true" aria-labelledby="resignConfirmTitle">
+    <h2 id="resignConfirmTitle">投了しますか？</h2>
+    <p>この対局は相手の勝ちになります。</p>
+    <div class="resign-confirm-actions">
+      <button id="cancelResign" class="action secondary" type="button">戻る</button>
+      <button id="confirmResign" class="action danger" type="button">投了する</button>
+    </div>
+  </section>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js?v=20260715-1"></script>
+<script src="js/online-game.js?v=20260725-timeout-review-2"></script>
+<script src="js/othello-rules.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/game-storage.js"></script>
+<script src="js/game-view.js"></script>
+<script src="js/game.js?v=20260725-timeout-result-1"></script>
+</body>
+</html>
+
+
+
+
+
+
+

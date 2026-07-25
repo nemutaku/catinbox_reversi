@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ</title>
+  <link rel="stylesheet" href="style.css?v=20260725-review-fixes-1">
+</head>
+<body class="shell-body">
+<main id="startScreen" class="start-screen" role="button" tabindex="0" aria-label="タイトル画面">
+  <h1 class="start-logo">
+    <span class="start-logo-main">はこ×ねこ</span>
+    <span class="start-logo-sub">リバーシ</span>
+  </h1>
+  <p class="start-prompt">画面をクリック</p>
+</main>
+
+<main id="shellScreen" class="shell-screen" hidden>
+  <iframe id="screenFrame" class="screen-frame" title="はこ×ねこリバーシ"></iframe>
+</main>
+
+<div id="shellFade" class="shell-fade" aria-hidden="true"></div>
+
+<script src="js/audio.js"></script>
+<script>
+(() => {
+  const audioSettingsKey = 'othelloAudioSettings';
+  const titleBgmPath = 'assets/audio/bgm/title-01.mp3';
+  const matchBgmFiles = new Set(['match-01.mp3', 'match-02.mp3']);
+  const bgmGain = 0.5;
+  const fadeMs = 760;
+  const fadeInMs = 900;
+  const defaults = { bgmEnabled: true, seEnabled: true, bgmVolume: 0.45, seVolume: 0.7, matchBgm: 'match-01.mp3' };
+  const startScreen = document.querySelector('#startScreen');
+  const shellScreen = document.querySelector('#shellScreen');
+  const screenFrame = document.querySelector('#screenFrame');
+  const shellFade = document.querySelector('#shellFade');
+  const bgm = new Audio(titleBgmPath);
+  const clickAudio = window.OthelloAudio?.createMatchAudioController?.();
+  bgm.loop = true;
+  let bgmStarted = false;
+  let currentBgmType = 'title';
+  let transitioning = false;
+  const allowedScreens = new Map([
+    ['mode-select.html', 'title'],
+    ['ai-setup.html', 'title'],
+    ['online.html', 'title'],
+    ['feedback.html', 'title'],
+    ['options.html', 'title'],
+    ['othello-local.html', 'match'],
+    ['othello-ai.html', 'match'],
+    ['othello-online.html', 'match']
+  ]);
+  const screenAliases = new Map([
+    ['title', 'title']
+  ]);
+  const initialScreen = new URLSearchParams(location.search).get('screen');
+
+  sessionStorage.setItem('othelloShellAudio', '1');
+
+  function getAudioSettings() {
+    try {
+      return { ...defaults, ...JSON.parse(localStorage.getItem(audioSettingsKey) || '{}') };
+    } catch {
+      return defaults;
+    }
+  }
+
+  function matchBgmPath(settings = getAudioSettings()) {
+    const fileName = matchBgmFiles.has(settings.matchBgm) ? settings.matchBgm : defaults.matchBgm;
+    return `assets/audio/bgm/${fileName}`;
+  }
+
+  function normalizeScreenPath(path) {
+    const raw = String(path || '').trim();
+    if (screenAliases.has(raw)) return raw;
+    let url;
+    try {
+      url = new URL(raw, location.href);
+    } catch {
+      return null;
+    }
+    if (url.origin !== location.origin) return null;
+    const baseDir = location.pathname.replace(/[^/]*$/, '');
+    if (url.pathname.replace(/[^/]*$/, '') !== baseDir) return null;
+    const fileName = url.pathname.split('/').pop();
+    if (!allowedScreens.has(fileName)) return null;
+    return url.search ? `${fileName}${url.search}` : fileName;
+  }
+
+  function bgmTypeFor(path) {
+    if (path === 'title') return 'title';
+    const normalized = normalizeScreenPath(path);
+    const [fileName, query = ''] = normalized ? normalized.split('?') : ['', ''];
+    if (fileName === 'options.html') {
+      const from = new URLSearchParams(query).get('from');
+      if (from === 'local' || from === 'ai' || from === 'online') return 'match';
+    }
+    return allowedScreens.get(fileName) || 'title';
+  }
+
+  function bgmSrcFor(type) {
+    return type === 'match' ? matchBgmPath() : titleBgmPath;
+  }
+
+  function syncBgmSource(type) {
+    const nextSrc = bgmSrcFor(type);
+    if (!bgm.src.endsWith(nextSrc)) {
+      bgm.src = nextSrc;
+      bgm.currentTime = 0;
+    }
+  }
+
+  function applyBgmVolume(settings = getAudioSettings()) {
+    bgm.volume = settings.bgmVolume * bgmGain;
+  }
+
+  function applyAudioSettings(nextSettings = null) {
+    const settings = nextSettings && typeof nextSettings === 'object'
+      ? { ...getAudioSettings(), ...nextSettings }
+      : getAudioSettings();
+    applyBgmVolume(settings);
+    if (!settings.bgmEnabled) {
+      bgm.pause();
+      bgmStarted = false;
+      return;
+    }
+    syncBgmSource(currentBgmType);
+    if (bgmStarted && bgm.paused) bgm.play().catch(() => {});
+  }
+
+  function startBgm(type = currentBgmType) {
+    currentBgmType = type;
+    const settings = getAudioSettings();
+    syncBgmSource(type);
+    applyBgmVolume(settings);
+    if (!settings.bgmEnabled) return Promise.resolve();
+    bgmStarted = true;
+    return bgm.play().catch(() => {
+      bgmStarted = false;
+    });
+  }
+
+  function playClickSound() {
+    clickAudio?.playSound?.(window.OthelloAudio.sounds.uiClick, 0.55);
+  }
+
+  function showFade() {
+    shellFade.classList.remove('fade-in');
+    shellFade.classList.add('fade-out');
+  }
+
+  function hideFade() {
+    shellFade.classList.remove('fade-out');
+    shellFade.classList.add('fade-in');
+    setTimeout(() => shellFade.classList.remove('fade-in'), 900);
+  }
+
+  function setFrame(path) {
+    return new Promise(resolve => {
+      screenFrame.addEventListener('load', resolve, { once: true });
+      screenFrame.src = path;
+    });
+  }
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function navigate(path, { click = true } = {}) {
+    if (transitioning) return;
+    const nextPath = normalizeScreenPath(path);
+    if (!nextPath) return;
+    transitioning = true;
+    try {
+      if (click) playClickSound();
+      showFade();
+      await new Promise(resolve => setTimeout(resolve, fadeMs));
+      if (nextPath === 'title') {
+        shellScreen.hidden = true;
+        screenFrame.removeAttribute('src');
+        startScreen.hidden = false;
+        hideFade();
+        await wait(fadeInMs);
+        await startBgm('title');
+        return;
+      }
+      startScreen.hidden = true;
+      shellScreen.hidden = false;
+      await setFrame(nextPath);
+      hideFade();
+      await wait(fadeInMs);
+      await startBgm(bgmTypeFor(nextPath));
+    } finally {
+      transitioning = false;
+    }
+  }
+
+  function openModeSelect() {
+    navigate('mode-select.html');
+  }
+
+  async function openInitialScreen() {
+    if (!initialScreen) return;
+    const nextScreen = normalizeScreenPath(initialScreen);
+    history.replaceState(null, '', location.pathname);
+    if (nextScreen) await navigate(nextScreen, { click: false });
+  }
+
+  window.addEventListener('message', event => {
+    if (event.source !== screenFrame.contentWindow) return;
+    if (event.origin !== 'null' && event.origin !== location.origin) return;
+    const data = event.data || {};
+    if (data.type === 'othello:navigate' && typeof data.path === 'string') {
+      navigate(data.path, { click: data.click !== false });
+    }
+    if (data.type === 'othello:audio-settings') {
+      applyAudioSettings(data.settings);
+    }
+    if (data.type === 'othello:bgm-type' && (data.bgmType === 'title' || data.bgmType === 'match')) {
+      startBgm(data.bgmType);
+    }
+  });
+
+  startScreen.addEventListener('click', openModeSelect);
+  startScreen.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openModeSelect();
+    }
+  });
+  window.addEventListener('storage', applyAudioSettings);
+  window.OthelloShell = {
+    navigate,
+    refreshAudioSettings: applyAudioSettings,
+    setBgmType(type) {
+      currentBgmType = type;
+      startBgm(type);
+    }
+  };
+  openInitialScreen();
+})();
+</script>
+</body>
+</html>
+
+
+

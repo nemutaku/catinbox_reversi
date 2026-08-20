@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - 初期盤面</title>
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+</head>
+<body class="initial-board-page">
+<main class="initial-board-editor">
+  <section class="initial-board-card">
+    <h1>初期盤面</h1>
+    <p class="initial-board-lead">カスタムマッチの開始時に置かれるコマを編集します。</p>
+
+    <div class="initial-board-controls">
+      <label>
+        <span>色</span>
+        <select id="initialColor">
+          <option value="black">黒</option>
+          <option value="white">白</option>
+        </select>
+      </label>
+      <label>
+        <span>コマ</span>
+        <select id="initialPiece">
+          <option value="cat">ねこ</option>
+          <option value="box">通常はこ</option>
+          <option value="special0">0%はこ</option>
+          <option value="special100">100%はこ</option>
+          <option value="empty">削除</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="initialBoard" class="initial-board-grid" role="grid" aria-label="初期盤面エディタ"></div>
+
+    <div class="initial-board-actions">
+      <button id="initialReset" type="button" class="secondary">標準配置に戻す</button>
+      <button id="initialBack" type="button" class="secondary">戻る</button>
+      <button id="initialSave" type="button">保存して戻る</button>
+    </div>
+  </section>
+</main>
+
+<script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script src="js/custom-match-settings.js?v=20260819-cache-review-1"></script>
+<script src="js/initial-board.js?v=20260816-initial-board-save-1"></script>
+</body>
+</html>

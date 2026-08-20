@@ -4,31 +4,109 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>はこ×ねこリバーシ - オンラインロビー</title>
-  <link rel="stylesheet" href="style.css?v=20260725-review-fixes-1">
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+  <script>
+    if (new URLSearchParams(location.search).get("mode") === "random") {
+      document.documentElement.classList.add("online-random-mode");
+    }
+  </script>
 </head>
 <body>
 <main class="online-screen">
   <h1 class="title-logo">ONLINE</h1>
-  <p class="sub">友人とのオンライン対局を準備します。</p>
+  <p id="onlineLead" class="sub">友人とのオンライン対局を準備します。</p>
 
   <section class="online-panel" aria-label="オンライン対局">
-    <div class="online-actions">
-      <label class="room-join">
-        <span>ニックネーム</span>
-        <input id="nickname" type="text" maxlength="12" placeholder="ねこさん" autocomplete="nickname">
-      </label>
+    <div id="friendRoomPanel" class="online-actions">
       <button id="createRoom" type="button">部屋を作る</button>
       <label class="room-join">
         <span>部屋IDで参加</span>
         <input id="joinCode" type="text" inputmode="latin" maxlength="6" placeholder="ABC123" autocomplete="off">
       </label>
       <button id="joinRoom" type="button" class="secondary">参加する</button>
+      <section class="custom-match-box" aria-label="カスタムマッチ設定">
+        <label class="custom-match-toggle">
+          <input id="customMatchEnabled" type="checkbox">
+          <span>カスタムマッチ</span>
+        </label>
+        <div id="customMatchSettings" class="custom-match-settings" hidden>
+          <label class="custom-match-field">
+            <span>自分の手番</span>
+            <select id="customSelfColor">
+              <option value="random">ランダム</option>
+              <option value="black">黒</option>
+              <option value="white">白</option>
+            </select>
+          </label>
+          <label class="custom-match-field">
+            <span>通常はこ：同色ねこ出現率(%)</span>
+            <input id="customNormalProbability" type="number" min="0" max="100" step="1" value="80">
+          </label>
+          <label class="custom-match-field">
+            <span>特殊はこ(1)：同色ねこ出現率(%)</span>
+            <input id="customSpecial0Probability" type="number" min="0" max="100" step="1" value="0">
+          </label>
+          <label class="custom-match-field">
+            <span>特殊はこ(1)使用回数(回)</span>
+            <input id="customSpecial0Uses" type="number" min="0" max="50" step="1" value="2">
+          </label>
+          <label class="custom-match-field">
+            <span>特殊はこ(2)：同色ねこ出現率(%)</span>
+            <input id="customSpecial100Probability" type="number" min="0" max="100" step="1" value="100">
+          </label>
+          <label class="custom-match-field">
+            <span>特殊はこ(2)使用回数(回)</span>
+            <input id="customSpecial100Uses" type="number" min="0" max="50" step="1" value="2">
+          </label>
+          <label class="custom-match-field">
+            <span>オープン！使用回数(回)</span>
+            <input id="customObserveUses" type="number" min="0" max="50" step="1" value="2">
+          </label>
+          <label class="custom-match-field custom-initial-launch">
+            <span>初期盤面</span>
+            <button id="customInitialSetupButton" type="button" class="secondary">初期盤面</button>
+          </label>
+          <section class="custom-initial-setup" aria-label="初期盤面">
+            <div class="custom-initial-heading">
+              <strong>初期盤面</strong>
+              <button id="customInitialReset" type="button" class="secondary compact">標準配置に戻す</button>
+            </div>
+            <div class="custom-initial-controls">
+              <label class="custom-match-field">
+                <span>置く色</span>
+                <select id="customInitialColor">
+                  <option value="black">黒</option>
+                  <option value="white">白</option>
+                </select>
+              </label>
+              <label class="custom-match-field">
+                <span>置くコマ</span>
+                <select id="customInitialPiece">
+                  <option value="cat">ねこ</option>
+                  <option value="box">通常はこ</option>
+                  <option value="special0">0%はこ</option>
+                  <option value="special100">100%はこ</option>
+                  <option value="empty">削除</option>
+                </select>
+              </label>
+            </div>
+            <div id="customInitialBoard" class="custom-initial-board" role="grid" aria-label="初期盤面エディタ"></div>
+            <p class="custom-initial-note">置く色とコマを選んでから、盤面のマスを押してください。</p>
+          </section>
+          <button id="customMatchReset" type="button" class="secondary custom-match-reset">リセット</button>
+        </div>
+      </section>
     </div>
 
-    <div class="room-info" aria-live="polite">
+    <div id="roomInfo" class="room-info" aria-live="polite">
       <span>現在の部屋ID</span>
       <strong id="roomCode">------</strong>
     </div>
+
+    <section id="randomRoomPanel" class="random-match-panel" aria-live="polite" hidden>
+      <p class="random-match-title">対局相手を探しています。</p>
+      <p class="random-match-note">見つかると自動で対局画面へ移動します。</p>
+    </section>
 
     <button id="resumeRoom" type="button" class="secondary" hidden>前回の対局に戻る</button>
 
@@ -53,7 +131,8 @@
   </section>
 
   <div class="options-actions">
-    <button id="modeSelectButton" type="button" class="secondary">モード選択へ戻る</button>
+    <button id="cancelRandomMatch" type="button" class="secondary" hidden>キャンセル</button>
+    <button id="modeSelectButton" type="button" class="secondary">対局選択へ戻る</button>
   </div>
 </main>
 
@@ -70,7 +149,8 @@
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js" onerror="showOnlineScriptError('Firebase firestore SDK')"></script>
 <script src="js/audio.js?v=20260726-webaudio-1"></script>
 <script src="js/firebase-config.js?v=20260715-1"></script>
-<script src="js/online.js?v=20260725-player-titles-1"></script>
+<script src="js/profile.js?v=20260819-paw-points-2"></script>
+<script src="js/online.js?v=20260815-review-fixes-1"></script>
 </body>
 </html>
 

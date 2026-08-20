@@ -9,7 +9,55 @@
     ...(window.quantumOthelloConfig || {})
   };
   const stateScopeName = gameConfig.stateScope.charAt(0).toUpperCase() + gameConfig.stateScope.slice(1);
-  const specialUseLimit = 2;
+  const clampInteger = (value, min, max, fallback) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(number)));
+  };
+  const initialPieceTypes = new Set(['cat', 'box', 'special0', 'special100']);
+  function normalizeInitialSetup(source = {}) {
+    const cells = Array.isArray(source.cells) ? source.cells : [];
+    return {
+      cells: cells.map(cell => ({
+        r: clampInteger(cell?.r, 0, 7, 0),
+        c: clampInteger(cell?.c, 0, 7, 0),
+        color: cell?.color === 'white' ? 'white' : 'black',
+        type: initialPieceTypes.has(cell?.type) ? cell.type : 'cat'
+      }))
+    };
+  }
+  function normalizeGameRules(source = {}) {
+    source = source || {};
+    const specialProbabilities = source.specialProbabilities || {};
+    const specialUseLimits = source.specialUseLimits || {};
+    return {
+      normalProbability: clampInteger(source.normalProbability, 0, 100, 80),
+      specialProbabilities: {
+        0: clampInteger(specialProbabilities[0] ?? specialProbabilities["0"] ?? source.special0Probability, 0, 100, 0),
+        100: clampInteger(specialProbabilities[100] ?? specialProbabilities["100"] ?? source.special100Probability, 0, 100, 100)
+      },
+      specialUseLimits: {
+        0: clampInteger(specialUseLimits[0] ?? specialUseLimits["0"] ?? source.special0Uses, 0, 50, 2),
+        100: clampInteger(specialUseLimits[100] ?? specialUseLimits["100"] ?? source.special100Uses, 0, 50, 2)
+      },
+      observeUseLimit: clampInteger(source.observeUseLimit ?? source.observeUses, 0, 50, 2),
+      initialSetup: source.initialSetup ? normalizeInitialSetup(source.initialSetup) : null
+    };
+  }
+  const gameRules = normalizeGameRules(gameConfig.rules);
+  const specialUseLimitFor = probability => gameRules.specialUseLimits[probability] ?? 2;
+  const specialProbabilityFor = probability => gameRules.specialProbabilities[probability] ?? probability;
+  const emptyProbLabelBoard = () => Array.from({ length: 8 }, () => Array(8).fill(''));
+  const copyProbLabelBoard = source => Array.from({ length: 8 }, (_, r) =>
+    Array.from({ length: 8 }, (_, c) => {
+      const value = source?.[r]?.[c];
+      return value === undefined || value === null ? '' : String(value);
+    })
+  );
+  const setProbLabel = (r, c, label) => {
+    if (!probLabelBoard?.[r]) return;
+    probLabelBoard[r][c] = label;
+  };
   const boardEl = document.querySelector('#board');
   const audio = window.OthelloAudio.createMatchAudioController();
   const { sounds } = audio;
@@ -49,17 +97,18 @@
   }
   normalizeActionLayout();
 
-  let board, probBoard, observedBoard, turn, lastMove = null, undoStack = [], positionHistory = [], reviewIndex = null, gameOver = false, finalObservationRunning = false, gameResult = null;
+  let board, probBoard, probLabelBoard, observedBoard, turn, lastMove = null, undoStack = [], positionHistory = [], reviewIndex = null, gameOver = false, finalObservationRunning = false, gameResult = null;
   let selectedSpecial = null;
   let specialUsed;
   let faceToFace = false;
   let observeUsesLeft;
+  let initialAdvanceRunning = false;
   let aiTurnTimer = null;
   let observingShaking = false;
   let observationPops = {};
   let externalObservationPreviewRunning = false;
 
-  const snapshot = () => ({ board: copy(board), probBoard: copy(probBoard), observedBoard: copy(observedBoard), turn });
+  const snapshot = () => ({ board: copy(board), probBoard: copy(probBoard), probLabelBoard: copyProbLabelBoard(probLabelBoard), observedBoard: copy(observedBoard), turn });
   const specialUseCount = (probability, player = turn) => {
     const value = specialUsed?.[player]?.[probability];
     if (value === true) return 1;
@@ -70,7 +119,46 @@
     [W]: { 100: specialUseCount(100, W), 0: specialUseCount(0, W) }
   });
   const copyObserveUsesLeft = () => ({ [B]: observeUsesLeft[B], [W]: observeUsesLeft[W] });
-  const moveProbability = () => selectedSpecial ?? 80;
+  const moveProbability = () => selectedSpecial === null ? gameRules.normalProbability : specialProbabilityFor(selectedSpecial);
+  function applyInitialPiece(cell) {
+    const r = clampInteger(cell?.r, 0, 7, 0);
+    const c = clampInteger(cell?.c, 0, 7, 0);
+    const piece = cell?.color === 'white' ? W : B;
+    const type = initialPieceTypes.has(cell?.type) ? cell.type : 'cat';
+    board[r][c] = piece;
+    if (type === 'cat') {
+      probBoard[r][c] = 100;
+      observedBoard[r][c] = true;
+      setProbLabel(r, c, '');
+      return;
+    }
+    observedBoard[r][c] = false;
+    if (type === 'special0') {
+      const probability = specialProbabilityFor(0);
+      probBoard[r][c] = probability;
+      setProbLabel(r, c, String(probability));
+      return;
+    }
+    if (type === 'special100') {
+      const probability = specialProbabilityFor(100);
+      probBoard[r][c] = probability;
+      setProbLabel(r, c, String(probability));
+      return;
+    }
+    probBoard[r][c] = gameRules.normalProbability;
+    setProbLabel(r, c, '');
+  }
+function applyInitialSetup() {
+  const cells = gameRules.initialSetup
+    ? gameRules.initialSetup.cells
+    : [
+          { r: 3, c: 3, color: 'white', type: 'cat' },
+          { r: 3, c: 4, color: 'black', type: 'cat' },
+          { r: 4, c: 3, color: 'black', type: 'cat' },
+          { r: 4, c: 4, color: 'white', type: 'cat' }
+        ];
+    for (const cell of cells) applyInitialPiece(cell);
+  }
   const stoneName = p => p === B ? '黒' : '白';
   const playerColorValue = () => gameConfig.getPlayerColor?.() === 'white' ? W : B;
   const aiColorValue = () => -playerColorValue();
@@ -139,6 +227,7 @@
     storage.save({
       board,
       probBoard,
+      probLabelBoard,
       observedBoard,
       turn,
       lastMove,
@@ -169,6 +258,7 @@
     if (!state) return false;
     board = state.board;
     probBoard = state.probBoard;
+    probLabelBoard = copyProbLabelBoard(state.probLabelBoard);
     observedBoard = state.observedBoard;
     turn = state.turn;
     lastMove = state.lastMove;
@@ -222,15 +312,15 @@
   }
 
   function specialAvailable(probability, player = turn) {
-    return specialUsed && specialUseCount(probability, player) < specialUseLimit;
+    return specialUsed && specialUseCount(probability, player) < specialUseLimitFor(probability);
   }
 
   function renderSpecialControls(reviewing = false) {
     const displayPlayer = actionDisplayPlayer();
     for (const probability of [100, 0]) {
       const button = elements[`special${probability}`];
-      const remaining = Math.max(0, specialUseLimit - specialUseCount(probability, displayPlayer));
-      button.textContent = `${probability}%はこ\n(あと${remaining}回)`;
+      const remaining = Math.max(0, specialUseLimitFor(probability) - specialUseCount(probability, displayPlayer));
+      button.textContent = `${specialProbabilityFor(probability)}%はこ\n(あと${remaining}回)`;
       const available = !reviewing && !gameOver && specialAvailable(probability);
       button.disabled = !available;
       button.classList.toggle('selected', selectedSpecial === probability && available);
@@ -249,6 +339,7 @@
     const reviewing = gameOver && reviewIndex !== null;
     const shownBoard = reviewing ? positionHistory[reviewIndex].board : board;
     const shownProb = reviewing ? positionHistory[reviewIndex].probBoard : probBoard;
+    const shownProbLabels = reviewing ? copyProbLabelBoard(positionHistory[reviewIndex].probLabelBoard) : probLabelBoard;
     const shownObserved = reviewing ? positionHistory[reviewIndex].observedBoard : observedBoard;
     const shownTurn = reviewing ? (positionHistory[reviewIndex].turn ?? turn) : turn;
     const aiThinking = isAiTurn();
@@ -267,6 +358,7 @@
       constants: { B },
       shownBoard,
       shownProb,
+      shownProbLabels,
       shownObserved,
       legalMoves: legal,
       reviewing,
@@ -310,7 +402,7 @@
   }
 
   function specialRemaining(probability, player = turn) {
-    return Math.max(0, specialUseLimit - specialUseCount(probability, player));
+    return Math.max(0, specialUseLimitFor(probability) - specialUseCount(probability, player));
   }
 
   function canUseSpecial(probability, player = turn) {
@@ -358,7 +450,19 @@
   }
 
   function finish() {
-    if (gameOver || finalObservationRunning) return;
+    if (gameOver || finalObservationRunning) return true;
+    if (isOnlineMode() && initialAdvanceRunning && gameConfig.canFinalizeInitialGame?.() === false) return false;
+    if (!hasOpenableBox()) {
+      gameOver = true;
+      finalObservationRunning = false;
+      reviewIndex = positionHistory.length ? positionHistory.length - 1 : null;
+      const black = count(B), white = count(W);
+      const result = black === white ? '引き分けです。' : black > white ? `黒の勝ち。${black} 対 ${white}` : `白の勝ち。${black} 対 ${white}`;
+      status(result);
+      render();
+      notifyStateChange('game-over');
+      return true;
+    }
     gameOver = true;
     finalObservationRunning = true;
     reviewIndex = null;
@@ -372,6 +476,7 @@
       status(`最後のオープンで ${changed} 個のはこから違う猫が出ました。${result}`);
       notifyStateChange('final-observe');
     });
+    return true;
   }
 
   function endByResignation(loser, options = {}) {
@@ -393,7 +498,10 @@
   function advance() {
     const legal = moves(board, turn);
     if (!legal.length) {
-      if (!moves(board, -turn).length) return finish();
+      if (!moves(board, -turn).length) {
+        if (!finish()) render();
+        return;
+      }
       const passed = turn;
       turn = -turn;
       if (positionHistory.length) positionHistory[positionHistory.length - 1].turn = turn;
@@ -410,20 +518,27 @@
     if (!m) return;
     audio.playSound(sounds.stonePlace);
     const probability = moveProbability();
-    undoStack.push({ board: copy(board), probBoard: copy(probBoard), observedBoard: copy(observedBoard), turn, positionHistoryLength: positionHistory.length, lastMove: lastMove && { ...lastMove }, specialUsed: copySpecialUsed(), selectedSpecial, observeUsesLeft: copyObserveUsesLeft() });
+    const usedSpecial = selectedSpecial;
+    const probabilityLabel = usedSpecial === null ? '' : String(probability);
+    undoStack.push({ board: copy(board), probBoard: copy(probBoard), probLabelBoard: copyProbLabelBoard(probLabelBoard), observedBoard: copy(observedBoard), turn, positionHistoryLength: positionHistory.length, lastMove: lastMove && { ...lastMove }, specialUsed: copySpecialUsed(), selectedSpecial, observeUsesLeft: copyObserveUsesLeft() });
     const nextState = applyMove(board, probBoard, observedBoard, m, turn, probability);
     board = nextState.board;
     probBoard = nextState.probBoard;
+    setProbLabel(m.r, m.c, probabilityLabel);
+    for (const [flippedR, flippedC] of m.f) {
+      setProbLabel(flippedR, flippedC, probabilityLabel);
+    }
     observedBoard = nextState.observedBoard;
-    if (selectedSpecial !== null) {
-      specialUsed[turn][selectedSpecial] = specialUseCount(selectedSpecial) + 1;
+    if (usedSpecial !== null) {
+      specialUsed[turn][usedSpecial] = specialUseCount(usedSpecial) + 1;
       selectedSpecial = null;
     }
     lastMove = { r: m.r, c: m.c };
     turn = -turn;
     positionHistory.push(snapshot());
     advance();
-    notifyStateChange('move');
+    if (!finalObservationRunning) render();
+    if (!gameOver || !finalObservationRunning) notifyStateChange('move');
   }
 
   function applyObservationRoll() {
@@ -561,7 +676,7 @@
   function observe() {
     if (!canUseLocalControls()) return;
     if (gameOver || finalObservationRunning || observeUsesLeft[turn] <= 0 || !hasOpenableBox()) return;
-    undoStack.push({ board: copy(board), probBoard: copy(probBoard), observedBoard: copy(observedBoard), turn, positionHistoryLength: positionHistory.length, lastMove: lastMove && { ...lastMove }, specialUsed: copySpecialUsed(), selectedSpecial, observeUsesLeft: copyObserveUsesLeft() });
+    undoStack.push({ board: copy(board), probBoard: copy(probBoard), probLabelBoard: copyProbLabelBoard(probLabelBoard), observedBoard: copy(observedBoard), turn, positionHistoryLength: positionHistory.length, lastMove: lastMove && { ...lastMove }, specialUsed: copySpecialUsed(), selectedSpecial, observeUsesLeft: copyObserveUsesLeft() });
     observeUsesLeft[turn]--;
     finalObservationRunning = true;
     notifyStateChange('observe-start');
@@ -587,6 +702,7 @@
     }
     board = copy(state.board);
     probBoard = copy(state.probBoard);
+    probLabelBoard = copyProbLabelBoard(state.probLabelBoard);
     observedBoard = normalizeObservedBoard(state.observedBoard);
     turn = state.turn;
     positionHistory = positionHistory.slice(0, state.positionHistoryLength);
@@ -609,7 +725,7 @@
     clearGameState();
     lastMove = null;
     selectedSpecial = null;
-    observeUsesLeft = { [B]: 2, [W]: 2 };
+    observeUsesLeft = { [B]: gameRules.observeUseLimit, [W]: gameRules.observeUseLimit };
     specialUsed = {
       [B]: { 100: 0, 0: 0 },
       [W]: { 100: 0, 0: 0 }
@@ -623,24 +739,19 @@
     observingShaking = false;
     observationPops = {};
     board = Array.from({ length: 8 }, () => Array(8).fill(E));
-    probBoard = Array.from({ length: 8 }, () => Array(8).fill(80));
+    probBoard = Array.from({ length: 8 }, () => Array(8).fill(gameRules.normalProbability));
+    probLabelBoard = emptyProbLabelBoard();
     observedBoard = emptyObservedBoard();
-    board[3][3] = W;
-    board[3][4] = B;
-    board[4][3] = B;
-    board[4][4] = W;
-    probBoard[3][3] = 100;
-    probBoard[3][4] = 100;
-    probBoard[4][3] = 100;
-    probBoard[4][4] = 100;
-    observedBoard[3][3] = true;
-    observedBoard[3][4] = true;
-    observedBoard[4][3] = true;
-    observedBoard[4][4] = true;
+    applyInitialSetup();
     turn = B;
     positionHistory = [snapshot()];
-    advance();
-    notifyStateChange('start');
+    initialAdvanceRunning = true;
+    try {
+      advance();
+    } finally {
+      initialAdvanceRunning = false;
+    }
+    if (!gameOver && !finalObservationRunning) notifyStateChange('start');
   }
 
   function notifyStateChange(reason) {
@@ -662,6 +773,7 @@
     if (options.playPlaceSound) audio.playSound(sounds.stonePlace);
     board = copy(state.board);
     probBoard = copy(state.probBoard);
+    probLabelBoard = copyProbLabelBoard(state.probLabelBoard);
     observedBoard = normalizeObservedBoard(state.observedBoard);
     turn = state.turn === W ? W : B;
     lastMove = state.lastMove ? { ...state.lastMove } : null;
@@ -669,19 +781,27 @@
       [B]: { 100: 0, 0: 0 },
       [W]: { 100: 0, 0: 0 }
     };
-    observeUsesLeft = state.observeUsesLeft || { [B]: 2, [W]: 2 };
+    observeUsesLeft = state.observeUsesLeft || { [B]: gameRules.observeUseLimit, [W]: gameRules.observeUseLimit };
     selectedSpecial = null;
     undoStack = [];
     positionHistory = Array.isArray(state.positionHistory) && state.positionHistory.length ? state.positionHistory.map(item => ({
       board: copy(item.board),
       probBoard: copy(item.probBoard),
+      probLabelBoard: copyProbLabelBoard(item.probLabelBoard),
       observedBoard: normalizeObservedBoard(item.observedBoard),
       turn: item.turn === W ? W : B,
       clock: item.clock || null
     })) : [snapshot()];
     gameOver = Boolean(state.gameOver);
     gameResult = state.gameResult || null;
-    reviewIndex = gameOver && !options.suppressReview ? positionHistory.length - 1 : null;
+    if (gameOver && !options.suppressReview) {
+      const requestedReviewIndex = Number.isInteger(options.initialReviewIndex)
+        ? options.initialReviewIndex
+        : positionHistory.length - 1;
+      reviewIndex = Math.min(Math.max(requestedReviewIndex, 0), positionHistory.length - 1);
+    } else {
+      reviewIndex = null;
+    }
     finalObservationRunning = false;
     observingShaking = false;
     observationPops = {};
@@ -693,8 +813,10 @@
     const legalMoves = gameOver || finalObservationRunning ? [] : moves(board, turn);
     return {
       mode: gameConfig.mode,
+      rules: gameRules,
       board: copy(board),
       probBoard: copy(probBoard),
+      probLabelBoard: copyProbLabelBoard(probLabelBoard),
       observedBoard: copy(observedBoard),
       turn,
       lastMove: lastMove ? { ...lastMove } : null,
@@ -714,6 +836,7 @@
       positionHistory: positionHistory.map(item => ({
         board: copy(item.board),
         probBoard: copy(item.probBoard),
+        probLabelBoard: copyProbLabelBoard(item.probLabelBoard),
         observedBoard: normalizeObservedBoard(item.observedBoard),
         turn: item.turn === W ? W : B,
         clock: item.clock || null
@@ -781,7 +904,8 @@
     location.href = `options.html?from=${encodeURIComponent(gameConfig.optionsFrom)}`;
   };
   if (elements.modeSelectButton) elements.modeSelectButton.onclick = () => {
-    navigateTo('mode-select.html', { clearState: true, pauseBgm: true });
+    const backPath = gameConfig.mode === 'local' ? 'local-select.html' : 'mode-select.html';
+    navigateTo(backPath, { clearState: true, pauseBgm: true });
   };
   document.addEventListener('click', (event) => {
     if (event.target.closest('button.action')) audio.playSound(sounds.uiClick, 0.55);

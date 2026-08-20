@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>はこ×ねこリバーシ - オンライン対局</title>
-  <link rel="stylesheet" href="style.css?v=20260725-review-fixes-1">
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
 </head>
 <body>
 <script>
@@ -60,8 +60,9 @@ window.addEventListener("unhandledrejection", event => {
         </div>
       </section>
       <section class="online-game-actions" aria-label="オンライン対局操作">
+        <section id="pawPointResult" class="paw-point-result" aria-label="肉球ポイント" hidden></section>
         <button id="onlineResign" class="action secondary" type="button">投了する</button>
-        <button id="onlineBackToRoom" class="action" type="button" hidden>ルーム作成画面へ戻る</button>
+        <button id="onlineBackToRoom" class="action" type="button" hidden>対局選択へ戻る</button>
       </section>
     </aside>
   </div>
@@ -79,14 +80,16 @@ window.addEventListener("unhandledrejection", event => {
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
 <script src="js/firebase-config.js?v=20260715-1"></script>
-<script src="js/online-game.js?v=20260725-timeout-review-2"></script>
+<script src="js/profile.js?v=20260819-paw-points-2"></script>
+<script src="js/online-game.js?v=20260819-paw-points-2"></script>
 <script src="js/othello-rules.js"></script>
 <script src="js/audio.js?v=20260726-webaudio-1"></script>
-<script src="js/game-storage.js"></script>
-<script src="js/game-view.js"></script>
-<script src="js/game.js?v=20260725-timeout-result-1"></script>
+<script src="js/game-storage.js?v=20260802-prob-label-2"></script>
+<script src="js/game-view.js?v=20260802-prob-label-2"></script>
+<script src="js/game.js?v=20260816-local-select-2"></script>
 </body>
 </html>
 

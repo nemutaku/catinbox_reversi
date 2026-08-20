@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - ローカル対局選択</title>
+  <script>
+    if (sessionStorage.getItem('othelloPageTransition') === '1') {
+      document.documentElement.classList.add('page-entering');
+      sessionStorage.removeItem('othelloPageTransition');
+    }
+  </script>
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+</head>
+<body>
+<section class="title-screen" aria-label="ローカル対局選択">
+  <div>
+    <h1 class="title-logo">LOCAL</h1>
+    <p class="sub">ローカル対局の種類を選んでください</p>
+  </div>
+  <div class="title-menu">
+    <button id="normalLocalBattle" type="button">通常対局</button>
+    <button id="customLocalBattle" type="button" class="secondary">カスタム対局</button>
+    <button id="modeSelectButton" type="button" class="secondary">モード選択へ戻る</button>
+  </div>
+</section>
+
+<script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script src="js/custom-match-settings.js?v=20260819-cache-review-1"></script>
+<script>
+(() => {
+  const audio = window.OthelloAudio?.createMatchAudioController?.();
+  const custom = window.OthelloCustomSettings;
+
+  function playClickSound() {
+    audio?.playSound?.(window.OthelloAudio.sounds.uiClick, 0.55);
+  }
+
+  function transitionTo(path) {
+    playClickSound();
+    if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') {
+      window.parent.postMessage({ type: 'othello:navigate', path, click: false }, '*');
+      return;
+    }
+    location.href = path;
+  }
+
+  document.querySelector('#normalLocalBattle')?.addEventListener('click', () => {
+    custom?.saveDraft?.('local', false, {});
+    transitionTo('othello-local.html');
+  });
+
+  document.querySelector('#customLocalBattle')?.addEventListener('click', () => {
+    transitionTo('local-custom.html');
+  });
+
+  document.querySelector('#modeSelectButton')?.addEventListener('click', () => {
+    transitionTo('mode-select.html');
+  });
+})();
+</script>
+</body>
+</html>

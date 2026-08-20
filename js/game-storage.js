@@ -6,9 +6,16 @@
 
     function normalizeState(state) {
       if (!state || !Array.isArray(state.board) || !Array.isArray(state.probBoard)) return null;
+      const normalizeProbLabelBoard = source => Array.from({ length: 8 }, (_, r) =>
+        Array.from({ length: 8 }, (_, c) => {
+          const value = source?.[r]?.[c];
+          return value === undefined || value === null ? '' : String(value);
+        })
+      );
       return {
         board: copy(state.board),
         probBoard: copy(state.probBoard),
+        probLabelBoard: normalizeProbLabelBoard(state.probLabelBoard),
         observedBoard: normalizeObservedBoard(state.observedBoard),
         turn: state.turn === W ? W : B,
         lastMove: state.lastMove ? { ...state.lastMove } : null,
@@ -16,6 +23,7 @@
         positionHistory: Array.isArray(state.positionHistory) ? state.positionHistory.map(item => ({
           board: copy(item.board),
           probBoard: copy(item.probBoard),
+          probLabelBoard: normalizeProbLabelBoard(item.probLabelBoard),
           observedBoard: normalizeObservedBoard(item.observedBoard),
           turn: item.turn === W ? W : B
         })) : [],

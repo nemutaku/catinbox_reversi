@@ -1,12 +1,14 @@
 (() => {
   const sessionKey = "othelloOnlineSession";
   const persistentSessionKey = "othelloOnlineLastSession";
+  const matchHistoryKey = "catinboxMatchHistory";
   const matchTimeMs = 5 * 60 * 1000;
   const presenceHealthyIntervalMs = 30 * 1000;
   const presenceRetryIntervalMs = 10 * 1000;
   const presenceWarningMs = presenceHealthyIntervalMs;
   const presenceTimeoutMs = 60 * 1000;
   const clockTickIntervalMs = 250;
+  const clockDisplayGraceMs = 300;
   const clockPlayers = [1, -1];
 
   function readSession() {
@@ -18,6 +20,37 @@
   }
 
   const session = readSession();
+  const isReviewSession = () => session?.reviewReturnPath === "mypage.html";
+  let reviewScreenRevealed = false;
+  let reviewScreenReadyNotified = false;
+  if (isReviewSession()) {
+    document.documentElement.classList.add("review-loading");
+    const reviewLoadingStyle = document.createElement("style");
+    reviewLoadingStyle.textContent = [
+      "html.review-loading body{background:#050806!important;}",
+      "html.review-loading body>*{visibility:hidden!important;}",
+      "html.review-revealing body::before{content:\"\";position:fixed;inset:0;z-index:9999;background:#050806;pointer-events:none;animation:reviewFadeIn .9s ease-in-out forwards;}",
+      "@keyframes reviewFadeIn{from{opacity:1}to{opacity:0}}"
+    ].join("");
+    document.head.appendChild(reviewLoadingStyle);
+  }
+  function notifyReviewScreenReady() {
+    if (!isReviewSession() || reviewScreenReadyNotified) return;
+    reviewScreenReadyNotified = true;
+    if (window.parent && window.parent !== window && sessionStorage.getItem("othelloShellAudio") === "1") {
+      window.parent.postMessage({ type: "othello:screen-ready", path: "othello-online.html" }, "*");
+    }
+  }
+  function revealReviewScreen() {
+    if (!isReviewSession() || reviewScreenRevealed) return;
+    reviewScreenRevealed = true;
+    document.documentElement.classList.remove("review-loading");
+    document.documentElement.classList.add("review-revealing");
+    notifyReviewScreenReady();
+    window.setTimeout(() => {
+      document.documentElement.classList.remove("review-revealing");
+    }, 950);
+  }
   let db = null;
   let roomRef = null;
   let movesRef = null;
@@ -27,6 +60,7 @@
   let ready = false;
   let latestVersion = 0;
   let publishing = false;
+  let pendingPublish = null;
   let remoteObservationPreviewUntil = 0;
   let latestClock = null;
   let clockInterval = null;
@@ -43,6 +77,11 @@
   let remoteHistory = [];
   let movesListenerReady = false;
   let publishedHistoryLength = 0;
+  const publishedHistoryIndexes = new Set();
+  let serverClockAnchorMs = null;
+  let localClockAnchorMs = null;
+  let savedMatchHistoryKey = "";
+  const allowedPlayerTitles = new Set(["新米ねこ", "アマチュアねこ", "ボスねこ"]);
   const resignButton = document.querySelector("#onlineResign");
   const backToRoomButton = document.querySelector("#onlineBackToRoom");
   const resignConfirm = document.querySelector("#resignConfirm");
@@ -69,19 +108,19 @@
     return name || fallback;
   }
 
-  function playerTitle(name) {
-    if (name === "眠澤") return "作者";
-    if (name === "フジナッツ健") return "公認指導員";
-    return "新米ねこ";
+  function normalizePlayerTitle(value) {
+    return allowedPlayerTitles.has(value) ? value : "新米ねこ";
   }
 
-  function applyPlayerTitle(elementId, name) {
+  function titleForColor(colorKey) {
+    const titles = latestRoomData?.playerTitles || session?.playerTitles || {};
+    return normalizePlayerTitle(titles[colorKey]);
+  }
+
+  function applyPlayerTitle(elementId, colorKey) {
     const titleEl = document.querySelector(elementId);
     if (!titleEl) return;
-    const title = playerTitle(name);
-    titleEl.textContent = title;
-    titleEl.classList.toggle("creator", title === "作者");
-    titleEl.classList.toggle("instructor", title === "公認指導員");
+    titleEl.textContent = titleForColor(colorKey);
   }
 
   function updatePlayerNames(playerNames = session?.playerNames || {}) {
@@ -91,9 +130,13 @@
     const whiteEl = document.querySelector("#onlineWhiteName");
     if (blackEl) blackEl.textContent = blackName;
     if (whiteEl) whiteEl.textContent = whiteName;
-    applyPlayerTitle("#onlineBlackTitle", blackName);
-    applyPlayerTitle("#onlineWhiteTitle", whiteName);
+    applyPlayerTitle("#onlineBlackTitle", "black");
+    applyPlayerTitle("#onlineWhiteTitle", "white");
     if (session) session.playerNames = { black: blackName, white: whiteName };
+    if (session) session.playerTitles = {
+      black: titleForColor("black"),
+      white: titleForColor("white")
+    };
   }
 
   function updateDisconnectNotice(disconnectedColor = null) {
@@ -117,12 +160,141 @@
     return "";
   }
 
+  function readLocalMatchHistory() {
+    try {
+      const history = JSON.parse(localStorage.getItem(matchHistoryKey) || "[]");
+      return Array.isArray(history) ? history : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveLocalMatchHistory(record) {
+    const nextHistory = [
+      record,
+      ...readLocalMatchHistory().filter(item => item?.roomCode !== record.roomCode)
+    ].slice(0, 20);
+    localStorage.setItem(matchHistoryKey, JSON.stringify(nextHistory));
+  }
+
+  function countBoardCats(board = []) {
+    let black = 0;
+    let white = 0;
+    board.forEach(row => row.forEach(value => {
+      if (value === 1) black += 1;
+      if (value === -1) white += 1;
+    }));
+    return { black, white };
+  }
+
+  function resultSummary(gameState, counts) {
+    const result = gameState?.gameResult;
+    const winner = result?.winner ?? (counts.black > counts.white ? 1 : counts.white > counts.black ? -1 : 0);
+    if (!winner) return "引き分け";
+    if (result?.type === "resign") return `${playerName(winner)}の勝ち(投了)`;
+    if (result?.type === "disconnect") return `${playerName(winner)}の勝ち(接続切れ)`;
+    if (result?.type === "timeout") return `${playerName(winner)}の勝ち(時間切れ)`;
+    return `${playerName(winner)}の勝ち(${Math.abs(counts.black - counts.white)}ねこ差)`;
+  }
+
+  function formatSignedPoint(value) {
+    const point = Math.trunc(Number(value) || 0);
+    return point > 0 ? `+${point}` : String(point);
+  }
+
+  function renderPawPointResult(record) {
+    const panel = document.querySelector("#pawPointResult");
+    if (!panel) return;
+    const pawPoints = window.CatProfile?.calculatePawPoints?.(record);
+    if (!pawPoints || record.matchType !== "random") {
+      panel.hidden = true;
+      panel.replaceChildren();
+      return;
+    }
+    const detailItems = pawPoints.breakdown.map(item => {
+      const valueText = item.kind === "multiply" ? `×${item.value}` : formatSignedPoint(item.value);
+      return `<li><span>${item.label}</span><b>${valueText}</b></li>`;
+    }).join("");
+    const totalText = formatSignedPoint(pawPoints.total);
+    panel.hidden = false;
+    panel.innerHTML = `
+      <h2>肉球ポイント</h2>
+      <p><strong>${totalText}P</strong> 変動しました。</p>
+      <ul>${detailItems}</ul>
+    `;
+  }
+
+  async function saveMatchHistory(gameState) {
+    if (!gameState?.gameOver && !gameState?.gameResult) return;
+    if (!session?.roomCode || !session?.playerId || !session?.playerColor) return;
+    const key = `${session.roomCode}:${gameState.version || 0}:${gameState.gameResult?.type || "score"}`;
+    if (savedMatchHistoryKey === key) return;
+    savedMatchHistoryKey = key;
+
+    const board = decodeNumberGrid(gameState.board || []);
+    const counts = countBoardCats(board);
+    const playerNames = latestRoomData?.playerNames || session.playerNames || {};
+    const playerTitles = latestRoomData?.playerTitles || session.playerTitles || {};
+    const finishedAtMs = Date.now();
+    const startedAtSource = isUsableDateSource(latestRoomData?.startedAt)
+      ? latestRoomData.startedAt
+      : latestRoomData?.createdAt || finishedAtMs;
+    const record = {
+      roomCode: session.roomCode,
+      matchType: latestRoomData?.matchType || session.matchType || "friend",
+      playerId: session.playerId,
+      playerColor: session.playerColor,
+      playerNames,
+      playerTitles,
+      startedAt: formatDateTimeText(startedAtSource, finishedAtMs),
+      finishedAt: formatDateTimeText(finishedAtMs),
+      playedAt: finishedAtMs,
+      result: resultSummary(gameState, counts),
+      gameResult: gameState.gameResult || null,
+      counts,
+      version: Number(gameState.version) || 0
+    };
+    record.pawPoints = window.CatProfile?.calculatePawPoints?.(record) || null;
+    renderPawPointResult(record);
+
+    try {
+      if (window.CatProfile?.saveMatchHistory) {
+        await window.CatProfile.saveMatchHistory(record);
+      } else {
+        saveLocalMatchHistory(record);
+      }
+    } catch {
+      saveLocalMatchHistory(record);
+    }
+  }
+
   function gameEnded(gameState = null) {
     const clock = currentClock();
     return Boolean(gameState?.gameOver || gameState?.gameResult || gameApi?.getState?.().gameOver || clock.timedOut !== null);
   }
 
+  function isFinalObservePreview(gameState = null) {
+    return gameState?.reason === "final-observe-start";
+  }
+
+  function isConfirmedEndedState(gameState = null) {
+    if (!gameEnded(gameState) || isFinalObservePreview(gameState)) return false;
+    const reason = gameState?.reason || "";
+    const resultType = gameState?.gameResult?.type || "";
+    return reason === "final-observe"
+      || reason === "game-over"
+      || reason === "disconnect"
+      || resultType === "resign"
+      || resultType === "disconnect"
+      || resultType === "timeout";
+  }
+
   function updateOnlineActionButtons(gameState = null) {
+    if (isReviewSession()) {
+      if (resignButton) resignButton.hidden = true;
+      if (backToRoomButton) backToRoomButton.hidden = false;
+      return;
+    }
     const ended = gameEnded(gameState);
     if (resignButton) {
       resignButton.hidden = ended;
@@ -145,12 +317,13 @@
 
   function navigateToRoomScreen() {
     sessionStorage.removeItem(sessionKey);
-    localStorage.removeItem(persistentSessionKey);
+    if (!session?.reviewReturnPath) localStorage.removeItem(persistentSessionKey);
+    const returnPath = session?.reviewReturnPath === "mypage.html" ? "mypage.html" : "online-select.html";
     if (window.parent && window.parent !== window && sessionStorage.getItem("othelloShellAudio") === "1") {
-      window.parent.postMessage({ type: "othello:navigate", path: "online.html", click: false }, "*");
+      window.parent.postMessage({ type: "othello:navigate", path: returnPath, click: false }, "*");
       return;
     }
-    location.href = "online.html";
+    location.href = returnPath;
   }
 
   function resign() {
@@ -168,18 +341,85 @@
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
   }
 
+  function localMonotonicNow() {
+    return window.performance?.now ? window.performance.now() : Date.now();
+  }
+
+  function timestampToMs(value, fallback = null) {
+    if (value == null) return fallback;
+    if (value && typeof value.toMillis === "function") return value.toMillis();
+    if (value && Number.isFinite(Number(value.seconds))) {
+      return Number(value.seconds) * 1000 + Math.floor(Number(value.nanoseconds || 0) / 1000000);
+    }
+    if (Number.isFinite(Number(value))) return Number(value);
+    return fallback;
+  }
+
+  function formatDateTimeText(value, fallback = Date.now()) {
+    if (typeof value === "string" && value.includes("年")) {
+      const year = Number(value.match(/^(\d{4})年/)?.[1]);
+      if (!Number.isFinite(year) || year >= 2026) return value;
+      value = fallback;
+    }
+    const date = new Date(timestampToMs(value, fallback));
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const hour = String(date.getHours()).padStart(2, "0");
+    const minute = String(date.getMinutes()).padStart(2, "0");
+    return `${year}年${month}月${day}日 ${hour}：${minute}`;
+  }
+
+  function isUsableDateSource(value) {
+    if (value == null) return false;
+    if (typeof value !== "string" || !value.includes("年")) return true;
+    const year = Number(value.match(/^(\d{4})年/)?.[1]);
+    return !Number.isFinite(year) || year >= 2026;
+  }
+
+  function rememberServerClock(timestamp) {
+    const serverMs = timestampToMs(timestamp);
+    if (serverMs === null) return false;
+    serverClockAnchorMs = serverMs;
+    localClockAnchorMs = localMonotonicNow();
+    return true;
+  }
+
+  function serverTimeToLocalMonotonic(serverMs) {
+    if (serverMs === null || serverMs === undefined) return null;
+    if (serverClockAnchorMs === null || localClockAnchorMs === null) return null;
+    return localClockAnchorMs + (serverMs - serverClockAnchorMs);
+  }
+
+  function clockNow() {
+    return localMonotonicNow();
+  }
+
+  function clockBaseTime(clock, fallback) {
+    const serverMs = timestampToMs(clock?.serverUpdatedAt);
+    const localServerTime = serverTimeToLocalMonotonic(serverMs);
+    if (localServerTime !== null) return localServerTime;
+
+    const updatedMs = timestampToMs(clock?.updatedAt);
+    if (updatedMs !== null) {
+      return clock?._displayClock ? updatedMs : fallback;
+    }
+    return fallback;
+  }
+
   function defaultClock(turn = -1) {
     return {
       remaining: { "-1": matchTimeMs, "1": matchTimeMs },
       active: turn,
-      updatedAt: Date.now(),
+      updatedAt: clockNow(),
+      serverUpdatedAt: null,
+      _displayClock: true,
       paused: false,
       timedOut: null
     };
   }
 
-  function normalizeClock(clock, turn = -1, now = Date.now()) {
-    const base = defaultClock(turn);
+  function normalizeClock(clock, turn = -1, now = clockNow()) {
     const source = clock || {};
     const remaining = {};
     clockPlayers.forEach(player => {
@@ -189,25 +429,44 @@
     return {
       remaining,
       active: clockPlayers.includes(Number(source.active)) ? Number(source.active) : turn,
-      updatedAt: Number.isFinite(Number(source.updatedAt)) ? Number(source.updatedAt) : now,
+      updatedAt: clockBaseTime(source, now),
+      serverUpdatedAt: source.serverUpdatedAt || null,
+      _displayClock: Boolean(source._displayClock),
       paused: Boolean(source.paused),
       timedOut: clockPlayers.includes(Number(source.timedOut)) ? Number(source.timedOut) : null
     };
   }
 
-  function clockAt(clock, now = Date.now()) {
+  function clockAt(clock, now = clockNow()) {
     const normalized = normalizeClock(clock, -1, now);
     if (!normalized.paused && normalized.timedOut === null && clockPlayers.includes(normalized.active)) {
-      const elapsed = Math.max(0, now - normalized.updatedAt);
+      const elapsed = Math.max(0, now - normalized.updatedAt - clockDisplayGraceMs);
       const key = String(normalized.active);
       normalized.remaining[key] = Math.max(0, normalized.remaining[key] - elapsed);
       normalized.updatedAt = now;
+      normalized.serverUpdatedAt = null;
+      normalized._displayClock = true;
       if (normalized.remaining[key] <= 0) normalized.timedOut = normalized.active;
     }
     return normalized;
   }
 
-  function prepareClockForPublish(state, reason, now = Date.now()) {
+  function adoptClockForDisplay(clock, turn = -1, now = clockNow()) {
+    const adopted = normalizeClock(clock, turn, now);
+    const baseTime = clockBaseTime(clock || {}, now);
+    if (!adopted.paused && adopted.timedOut === null && clockPlayers.includes(adopted.active)) {
+      const elapsed = Math.max(0, now - baseTime - clockDisplayGraceMs);
+      const key = String(adopted.active);
+      adopted.remaining[key] = Math.max(0, adopted.remaining[key] - elapsed);
+      if (adopted.remaining[key] <= 0) adopted.timedOut = adopted.active;
+    }
+    adopted.updatedAt = now;
+    adopted.serverUpdatedAt = null;
+    adopted._displayClock = true;
+    return adopted;
+  }
+
+  function prepareClockForPublish(state, reason, now = clockNow()) {
     const current = reason === "start"
       ? defaultClock(state.turn)
       : clockAt(latestClock || defaultClock(state.turn), now);
@@ -224,6 +483,7 @@
     }
 
     current.updatedAt = now;
+    current.serverUpdatedAt = null;
     return current;
   }
 
@@ -232,6 +492,7 @@
   }
 
   function isClockExpired(player) {
+    if (isReviewSession()) return false;
     const clock = currentClock();
     return clock.timedOut === player || clock.remaining[String(player)] <= 0;
   }
@@ -273,16 +534,45 @@
     clockInterval = setInterval(updateClockPanel, clockTickIntervalMs);
   }
 
+  function clampInteger(value, min, max, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(number)));
+  }
+
+  function normalizeMatchRules(source = {}) {
+    const specialProbabilities = source?.specialProbabilities || {};
+    const specialUseLimits = source?.specialUseLimits || {};
+    return {
+      normalProbability: clampInteger(source?.normalProbability, 0, 100, 80),
+      specialProbabilities: {
+        0: clampInteger(specialProbabilities[0] ?? specialProbabilities["0"] ?? source?.special0Probability, 0, 100, 0),
+        100: clampInteger(specialProbabilities[100] ?? specialProbabilities["100"] ?? source?.special100Probability, 0, 100, 100)
+      },
+      specialUseLimits: {
+        0: clampInteger(specialUseLimits[0] ?? specialUseLimits["0"] ?? source?.special0Uses, 0, 50, 2),
+        100: clampInteger(specialUseLimits[100] ?? specialUseLimits["100"] ?? source?.special100Uses, 0, 50, 2)
+      },
+      observeUseLimit: clampInteger(source?.observeUseLimit ?? source?.observeUses, 0, 50, 2),
+      initialSetup: source?.initialSetup || null
+    };
+  }
+
   function updateOnlineResourcePanel(state) {
     if (!state) return;
     const opponent = -playerColorValue();
+    const rules = normalizeMatchRules(state.rules || latestRoomData?.matchRules || session?.matchRules);
     const specialUsed = state.specialUsed?.[opponent] || {};
-    const special100 = Math.max(0, 2 - Number(specialUsed[100] || 0));
-    const special0 = Math.max(0, 2 - Number(specialUsed[0] || 0));
+    const special100 = Math.max(0, rules.specialUseLimits[100] - Number(specialUsed[100] || 0));
+    const special0 = Math.max(0, rules.specialUseLimits[0] - Number(specialUsed[0] || 0));
     const observeLeft = state.observeUsesLeft?.[opponent] ?? 0;
     const special100El = document.querySelector("#onlineOpponentSpecial100");
     const special0El = document.querySelector("#onlineOpponentSpecial0");
     const observeEl = document.querySelector("#onlineOpponentObserveLeft");
+    const special100Label = special100El?.closest(".resource-item")?.querySelector("span");
+    const special0Label = special0El?.closest(".resource-item")?.querySelector("span");
+    if (special100Label) special100Label.textContent = `あいて ${rules.specialProbabilities[100]}%はこ`;
+    if (special0Label) special0Label.textContent = `あいて ${rules.specialProbabilities[0]}%はこ`;
     if (special100El) special100El.textContent = `あと${special100}回`;
     if (special0El) special0El.textContent = `あと${special0}回`;
     if (observeEl) observeEl.textContent = `あと${observeLeft}回`;
@@ -291,6 +581,15 @@
 
   function serverTimestamp() {
     return firebase.firestore.FieldValue.serverTimestamp();
+  }
+
+  function clockForFirestore(clock) {
+    const { _displayClock, ...clockPayload } = clock || {};
+    return {
+      ...clockPayload,
+      updatedAt: Date.now(),
+      serverUpdatedAt: serverTimestamp()
+    };
   }
 
   function opponentPlayerValue() {
@@ -409,17 +708,34 @@
     return rows.map(row => String(row).split(",").map(Number));
   }
 
+  function decodeStringGrid(rows = []) {
+    return rows.map(row => String(row).split(",").map(value => value || ""));
+  }
+
   function decodeBooleanGrid(rows = []) {
     return rows.map(row => String(row).split(",").map(value => value === "true" || value === "1"));
+  }
+
+  function observedBoardForState(gameState, board) {
+    const observed = decodeBooleanGrid(gameState?.observedBoard || []);
+    if (gameState?.reason !== "final-observe") return observed;
+    return board.map((row, r) => row.map((cell, c) => cell !== 0 || Boolean(observed[r]?.[c])));
+  }
+
+  function clockForHistory(clock) {
+    if (!clock) return null;
+    const { _displayClock, ...clockPayload } = clock;
+    return clockPayload;
   }
 
   function encodeHistory(history = []) {
     return history.map(item => ({
       board: encodeGrid(item.board),
       probBoard: encodeGrid(item.probBoard),
+      probLabelBoard: encodeGrid(item.probLabelBoard || []),
       observedBoard: encodeGrid(item.observedBoard.map(row => row.map(value => value ? 1 : 0))),
       turn: item.turn,
-      clock: item.clock || null
+      clock: clockForHistory(item.clock)
     }));
   }
 
@@ -431,6 +747,7 @@
     return history.map(item => ({
       board: decodeNumberGrid(item.board),
       probBoard: decodeNumberGrid(item.probBoard),
+      probLabelBoard: decodeStringGrid(item.probLabelBoard || []),
       observedBoard: decodeBooleanGrid(item.observedBoard),
       turn: item.turn,
       clock: item.clock || null
@@ -448,10 +765,123 @@
       .map(({ index, reason, version, ...item }) => item);
   }
 
+  function gridsMatch(left = [], right = []) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((row, r) => (
+      Array.isArray(row)
+      && Array.isArray(right[r])
+      && row.length === right[r].length
+      && row.every((value, c) => value === right[r][c])
+    ));
+  }
+
+  function historyItemsMatch(left, right) {
+    return Boolean(left && right
+      && gridsMatch(left.board, right.board)
+      && gridsMatch(left.probBoard, right.probBoard)
+      && gridsMatch(left.probLabelBoard || [], right.probLabelBoard || [])
+      && gridsMatch(left.observedBoard || [], right.observedBoard || [])
+      && left.turn === right.turn);
+  }
+
+  function compactHistoryForReview(history = []) {
+    const compacted = [];
+    history.forEach(item => {
+      if (!item || !Array.isArray(item.board)) return;
+      const previous = compacted[compacted.length - 1];
+      if (historyItemsMatch(previous, item)) {
+        compacted[compacted.length - 1] = { ...previous, clock: item.clock || previous.clock || null };
+        return;
+      }
+      compacted.push(item);
+    });
+    return compacted;
+  }
+
+  function finalHistoryItemFromState(gameState) {
+    if (!gameState || (gameState.reason !== "final-observe" && gameState.reason !== "game-over")) return null;
+    const board = decodeNumberGrid(gameState.board);
+    return {
+      board,
+      probBoard: decodeNumberGrid(gameState.probBoard),
+      probLabelBoard: decodeStringGrid(gameState.probLabelBoard || []),
+      observedBoard: observedBoardForState(gameState, board),
+      turn: gameState.turn,
+      clock: clockForHistory(clockAt(gameState.clock))
+    };
+  }
+
+  function normalizeHistoryForState(history, gameState) {
+    const normalized = compactHistoryForReview(history);
+    const finalItem = finalHistoryItemFromState(gameState);
+    if (!finalItem) return normalized;
+
+    const lastIndex = normalized.length - 1;
+    if (lastIndex < 0) return [finalItem];
+    if (historyItemsMatch(normalized[lastIndex], finalItem)) {
+      normalized[lastIndex] = { ...normalized[lastIndex], clock: finalItem.clock || normalized[lastIndex].clock || null };
+    } else {
+      normalized.push(finalItem);
+    }
+    return normalized;
+  }
+
+  function hasCompleteRemoteHistory(gameState) {
+    const expectedLength = Number(gameState?.historyLength || 0);
+    if (!expectedLength) return false;
+    if (remoteHistory.length < expectedLength) return false;
+    const indexes = new Set(
+      remoteHistory
+        .map(item => Number(item.index))
+        .filter(index => Number.isInteger(index))
+    );
+    for (let index = 0; index < expectedLength; index++) {
+      if (!indexes.has(index)) return false;
+    }
+    return true;
+  }
+
+  function expectedHistoryLength(gameState) {
+    return Number(gameState?.historyLength || 0);
+  }
+
+  function missingRemoteHistoryIndexes(gameState) {
+    const expectedLength = expectedHistoryLength(gameState);
+    if (!expectedLength) return [];
+    const indexes = new Set(
+      remoteHistory
+        .map(item => Number(item.index))
+        .filter(index => Number.isInteger(index))
+    );
+    const missing = [];
+    for (let index = 0; index < expectedLength; index++) {
+      if (!indexes.has(index)) missing.push(index);
+    }
+    return missing;
+  }
+
+  function hasIncompleteRemoteHistory(gameState) {
+    return expectedHistoryLength(gameState) > 0 && missingRemoteHistoryIndexes(gameState).length > 0;
+  }
+
+  function showIncompleteHistoryWarning(gameState) {
+    if (!isReviewSession() || !hasIncompleteRemoteHistory(gameState)) return;
+    setStatus("棋譜が一部保存されていません。保存済みの範囲で表示しています。", true);
+  }
+
   function historyForState(gameState) {
-    const subcollectionHistory = sortedRemoteHistory();
-    if (subcollectionHistory.length) return subcollectionHistory;
-    return decodeHistory(gameState?.positionHistory || []);
+    showIncompleteHistoryWarning(gameState);
+    const expectedLength = expectedHistoryLength(gameState);
+    const fallbackHistory = decodeHistory(gameState?.positionHistory || []);
+    let history = fallbackHistory;
+    if (hasCompleteRemoteHistory(gameState)) {
+      history = sortedRemoteHistory();
+    } else if (expectedLength && fallbackHistory.length >= expectedLength) {
+      history = fallbackHistory;
+    } else if (isReviewSession() && remoteHistory.length) {
+      history = sortedRemoteHistory();
+    }
+    return normalizeHistoryForState(history, gameState);
   }
 
   function addClockToLatestHistory(state, clock) {
@@ -468,6 +898,7 @@
     return {
       board: encodeGrid(state.board),
       probBoard: encodeGrid(state.probBoard),
+      probLabelBoard: encodeGrid(state.probLabelBoard || []),
       observedBoard: encodeGrid(state.observedBoard.map(row => row.map(value => value ? 1 : 0))),
       turn: state.turn,
       lastMove: state.lastMove || null,
@@ -480,10 +911,12 @@
   }
 
   function restoreState(gameState) {
+    const board = decodeNumberGrid(gameState.board);
     return {
-      board: decodeNumberGrid(gameState.board),
+      board,
       probBoard: decodeNumberGrid(gameState.probBoard),
-      observedBoard: decodeBooleanGrid(gameState.observedBoard),
+      probLabelBoard: decodeStringGrid(gameState.probLabelBoard || []),
+      observedBoard: observedBoardForState(gameState, board),
       turn: gameState.turn,
       lastMove: gameState.lastMove || null,
       specialUsed: gameState.specialUsed,
@@ -517,23 +950,23 @@
   }
 
   function collectNewHistoryEntries(history, reason, version) {
-    const startIndex = Math.max(remoteHistory.length, publishedHistoryLength);
-    return history.slice(startIndex).map((item, offset) => ({
-      index: startIndex + offset,
-      reason,
-      version,
-      item
-    }));
+    const knownIndexes = new Set(publishedHistoryIndexes);
+    remoteHistory.forEach(item => {
+      const index = Number(item.index);
+      if (Number.isInteger(index)) knownIndexes.add(index);
+    });
+    return history
+      .map((item, index) => ({
+        index,
+        reason,
+        version,
+        item
+      }))
+      .filter(entry => !knownIndexes.has(entry.index));
   }
 
-  function writeStateBatch(statePayload, history, reason, version) {
-    const batch = db.batch();
-    batch.update(roomRef, {
-      gameState: statePayload,
-      updatedAt: serverTimestamp()
-    });
-
-    collectNewHistoryEntries(history, reason, version).forEach(entry => {
+  function writeHistoryEntriesToBatch(batch, entries) {
+    entries.forEach(entry => {
       const doc = movesRef.doc(String(entry.index).padStart(3, "0"));
       batch.set(doc, {
         index: entry.index,
@@ -543,10 +976,32 @@
         createdAt: serverTimestamp()
       });
     });
+  }
 
-    return batch.commit().then(() => {
-      publishedHistoryLength = Math.max(publishedHistoryLength, history.length);
+  function markPublishedHistoryEntries(entries, historyLength = 0) {
+    entries.forEach(entry => publishedHistoryIndexes.add(entry.index));
+    publishedHistoryLength = Math.max(
+      publishedHistoryLength,
+      historyLength,
+      ...entries.map(entry => entry.index + 1)
+    );
+  }
+
+  function writeStateBatch(statePayload, history, reason, version) {
+    const entries = collectNewHistoryEntries(history, reason, version);
+    const batch = db.batch();
+    batch.update(roomRef, {
+      gameState: statePayload,
+      updatedAt: serverTimestamp()
     });
+    writeHistoryEntriesToBatch(batch, entries);
+    return batch.commit().then(() => {
+      markPublishedHistoryEntries(entries, history.length);
+    });
+  }
+
+  function reviewApplyOptions(options = {}) {
+    return options;
   }
 
   function applyMovesSnapshot(snapshot) {
@@ -564,17 +1019,19 @@
     });
     remoteHistory = nextHistory.sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
     movesListenerReady = true;
-    publishedHistoryLength = Math.max(publishedHistoryLength, remoteHistory.length);
+    markPublishedHistoryEntries(remoteHistory, remoteHistory.length);
 
     const expectedLength = Number(latestRoomData?.gameState?.historyLength || 0);
+    showIncompleteHistoryWarning(latestRoomData?.gameState);
     if (
       latestRoomData?.gameState
       && gameEnded(latestRoomData.gameState)
+      && isConfirmedEndedState(latestRoomData.gameState)
       && expectedLength > 0
-      && remoteHistory.length >= expectedLength
-      && !externalObservationPreviewRunning
+      && hasCompleteRemoteHistory(latestRoomData.gameState)
     ) {
-      gameApi?.applyExternalState?.(restoreStateWithTimeoutFallback(latestRoomData.gameState));
+      gameApi?.applyExternalState?.(restoreStateWithTimeoutFallback(latestRoomData.gameState), reviewApplyOptions());
+      revealReviewScreen();
       updateClockPanel();
     }
   }
@@ -582,13 +1039,22 @@
   function startMovesListener() {
     if (!movesRef || unsubscribeMoves) return;
     unsubscribeMoves = movesRef.orderBy("index").onSnapshot(applyMovesSnapshot, () => {
+      revealReviewScreen();
       setStatus("履歴情報の更新に失敗しました。通信環境を確認してください。", true);
     });
   }
 
   async function publishState(state, reason) {
-    if (!ready || !roomRef || publishing) return;
+    if (isReviewSession()) return;
+    if (!ready || !roomRef) {
+      pendingPublish = { state, reason };
+      return;
+    }
     if (reason === "start" && session.playerColor !== "black") return;
+    if (publishing) {
+      pendingPublish = { state, reason };
+      return;
+    }
 
     publishing = true;
     try {
@@ -599,9 +1065,73 @@
         ...state,
         positionHistory: addClockToLatestHistory(state, latestClock)
       };
+      if (state.gameResult?.type === "resign") {
+        let resignEndedStateForLocal = null;
+        let publishedEntries = [];
+        let publishedLength = 0;
+        await db.runTransaction(async transaction => {
+          const snapshot = await transaction.get(roomRef);
+          if (!snapshot.exists) return;
+
+          const room = snapshot.data();
+          const gameState = room.gameState;
+          if (room.status === "finished" || gameState?.gameOver || gameState?.gameResult) return;
+
+          const baseState = gameState ? restoreState(gameState) : stateWithClockHistory;
+          const endedState = {
+            ...baseState,
+            gameOver: true,
+            gameResult: state.gameResult,
+            positionHistory: addClockToLatestHistory(baseState, latestClock)
+          };
+          resignEndedStateForLocal = endedState;
+          const statePayload = {
+            ...sanitizeState(endedState),
+            historyLength: Math.max(Number(gameState?.historyLength || 0), endedState.positionHistory.length),
+            clock: clockForFirestore(latestClock),
+            version,
+            updatedBy: session.playerId,
+            reason
+          };
+          transaction.update(roomRef, {
+            status: "finished",
+            gameState: statePayload,
+            updatedAt: serverTimestamp()
+          });
+          const newHistoryEntries = collectNewHistoryEntries(endedState.positionHistory, reason, version);
+          publishedEntries = newHistoryEntries;
+          publishedLength = endedState.positionHistory.length;
+          newHistoryEntries.forEach(entry => {
+            transaction.set(movesRef.doc(String(entry.index).padStart(3, "0")), {
+              index: entry.index,
+              reason: entry.reason,
+              version: entry.version,
+              ...encodeHistoryItem(entry.item),
+              createdAt: serverTimestamp()
+            });
+          });
+          if (!newHistoryEntries.length && endedState.positionHistory.length) {
+            const lastIndex = endedState.positionHistory.length - 1;
+            publishedEntries = [{ index: lastIndex }];
+            transaction.set(movesRef.doc(String(lastIndex).padStart(3, "0")), {
+              index: lastIndex,
+              reason,
+              version,
+              ...encodeHistoryItem(endedState.positionHistory[lastIndex]),
+              createdAt: serverTimestamp()
+            }, { merge: true });
+          }
+        });
+        markPublishedHistoryEntries(publishedEntries, publishedLength);
+        clearPersistentSession();
+        stopPresenceTicker();
+        if (resignEndedStateForLocal) gameApi.applyExternalState(resignEndedStateForLocal, reviewApplyOptions());
+        updateClockPanel();
+        return;
+      }
       await writeStateBatch({
         ...sanitizeState(stateWithClockHistory),
-        clock: latestClock,
+        clock: clockForFirestore(latestClock),
         version,
         updatedBy: session.playerId,
         reason
@@ -615,6 +1145,11 @@
       setStatus("対局情報の送信に失敗しました。通信環境を確認してください。", true);
     } finally {
       publishing = false;
+      if (pendingPublish) {
+        const nextPublish = pendingPublish;
+        pendingPublish = null;
+        publishState(nextPublish.state, nextPublish.reason);
+      }
     }
   }
 
@@ -629,6 +1164,8 @@
       const loser = player;
       const winner = -player;
       let endedStateForLocal = null;
+      let publishedEntries = [];
+      let publishedLength = 0;
       await db.runTransaction(async transaction => {
         const snapshot = await transaction.get(roomRef);
         if (!snapshot.exists) return;
@@ -642,7 +1179,7 @@
           ...clockAt(gameState?.clock || clock),
           paused: true,
           timedOut: loser,
-          updatedAt: Date.now()
+          updatedAt: clockNow()
         };
         const endedState = {
           ...baseState,
@@ -654,7 +1191,7 @@
         const version = Math.max(Date.now(), (Number(gameState?.version) || latestVersion) + 1);
         const statePayload = {
           ...sanitizeState(endedState),
-          clock: endedClock,
+          clock: clockForFirestore(endedClock),
           version,
           updatedBy: session.playerId,
           reason: "timeout"
@@ -665,6 +1202,8 @@
           updatedAt: serverTimestamp()
         });
         const newHistoryEntries = collectNewHistoryEntries(endedState.positionHistory, "timeout", version);
+        publishedEntries = newHistoryEntries;
+        publishedLength = endedState.positionHistory.length;
         newHistoryEntries.forEach(entry => {
           transaction.set(movesRef.doc(String(entry.index).padStart(3, "0")), {
             index: entry.index,
@@ -676,6 +1215,7 @@
         });
         if (!newHistoryEntries.length && endedState.positionHistory.length) {
           const lastIndex = endedState.positionHistory.length - 1;
+          publishedEntries = [{ index: lastIndex }];
           transaction.set(movesRef.doc(String(lastIndex).padStart(3, "0")), {
             index: lastIndex,
             reason: "timeout",
@@ -690,9 +1230,9 @@
       timeoutPublished = true;
       clearPersistentSession();
       stopPresenceTicker();
-      publishedHistoryLength = Math.max(publishedHistoryLength, gameApi.getState().positionHistory?.length || 0);
+      markPublishedHistoryEntries(publishedEntries, publishedLength);
       if (endedStateForLocal) {
-        gameApi.applyExternalState(endedStateForLocal);
+        gameApi.applyExternalState(endedStateForLocal, reviewApplyOptions());
         updateClockPanel();
       } else {
         gameApi.render();
@@ -708,6 +1248,8 @@
     if (!ready || !db || !roomRef || !gameApi || disconnectPublishing) return;
     disconnectPublishing = true;
     let endedStateForLocal = null;
+    let publishedEntries = [];
+    let publishedLength = 0;
     try {
       const loser = opponentPlayerValue();
       const winner = playerColorValue();
@@ -723,7 +1265,7 @@
         const endedClock = {
           ...normalizeClock(gameState?.clock, baseState.turn),
           paused: true,
-          updatedAt: Date.now()
+          updatedAt: clockNow()
         };
         const endedState = {
           ...baseState,
@@ -735,7 +1277,7 @@
         const version = Math.max(Date.now(), (Number(gameState?.version) || 0) + 1);
         const statePayload = {
           ...sanitizeState(endedState),
-          clock: endedClock,
+          clock: clockForFirestore(endedClock),
           version,
           updatedBy: session.playerId,
           reason: "disconnect"
@@ -746,6 +1288,8 @@
           updatedAt: serverTimestamp()
         });
         const newHistoryEntries = collectNewHistoryEntries(endedState.positionHistory, "disconnect", version);
+        publishedEntries = newHistoryEntries;
+        publishedLength = endedState.positionHistory.length;
         newHistoryEntries.forEach(entry => {
           transaction.set(movesRef.doc(String(entry.index).padStart(3, "0")), {
             index: entry.index,
@@ -757,6 +1301,7 @@
         });
         if (!newHistoryEntries.length && endedState.positionHistory.length) {
           const lastIndex = endedState.positionHistory.length - 1;
+          publishedEntries = [{ index: lastIndex }];
           transaction.set(movesRef.doc(String(lastIndex).padStart(3, "0")), {
             index: lastIndex,
             reason: "disconnect",
@@ -768,9 +1313,9 @@
       });
       clearPersistentSession();
       stopPresenceTicker();
-      publishedHistoryLength = Math.max(publishedHistoryLength, gameApi.getState().positionHistory?.length || 0);
+      markPublishedHistoryEntries(publishedEntries, publishedLength);
       if (endedStateForLocal) {
-        gameApi.applyExternalState(endedStateForLocal);
+        gameApi.applyExternalState(endedStateForLocal, reviewApplyOptions());
         updateClockPanel();
       }
     } catch (error) {
@@ -784,19 +1329,31 @@
     if (!snapshot.exists || !gameApi) return;
     const room = snapshot.data();
     latestRoomData = room;
-    trackPresence(room);
+    if (!isReviewSession()) trackPresence(room);
     const gameState = room.gameState;
     updatePlayerNames(room.playerNames || {});
-
     if (!gameState) {
+      if (isReviewSession()) {
+        setStatus(`${session.roomCode} に接続中です。棋譜を読み込んでいます。`);
+        return;
+      }
       setStatus(`${session.roomCode} に接続中です。初期盤面を待っています。`);
       if (session.playerColor === "black") publishState(gameApi.getState(), "start");
       checkOpponentPresence();
       return;
     }
 
-    latestClock = normalizeClock(gameState.clock, gameState.turn);
-    updateClockPanel();
+    const incomingVersion = Number(gameState.version) || 0;
+    if (incomingVersion < latestVersion) return;
+
+    const shouldAdoptClock = !latestClock || incomingVersion > latestVersion;
+    if (shouldAdoptClock && rememberServerClock(gameState?.clock?.serverUpdatedAt)) {
+      latestClock = adoptClockForDisplay(gameState.clock, gameState.turn);
+      updateClockPanel();
+    } else if (!latestClock) {
+      latestClock = defaultClock(gameState.turn);
+      updateClockPanel();
+    }
     updateOnlineActionButtons(gameState);
 
     const version = Number(gameState.version) || 0;
@@ -813,10 +1370,21 @@
     } else {
       setStatus(`${session.roomCode} に接続中です。${turnName}番${myTurn ? "（あなたの番）" : "（相手の番）"}`);
     }
-    if (gameEnded(gameState)) {
+    const ended = gameEnded(gameState);
+    const finalObservePreview = isFinalObservePreview(gameState);
+    const confirmedEnded = isConfirmedEndedState(gameState);
+    if (confirmedEnded) {
+      if (isReviewSession()) {
+        gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), reviewApplyOptions());
+        revealReviewScreen();
+        updateClockPanel();
+        latestVersion = Math.max(latestVersion, version);
+        return;
+      }
+      saveMatchHistory(gameState);
       clearPersistentSession();
       stopPresenceTicker();
-    } else {
+    } else if (!ended && !finalObservePreview && !isReviewSession()) {
       checkOpponentPresence();
     }
 
@@ -824,7 +1392,8 @@
     if (forceTimeoutState) {
       const localState = gameApi.getState();
       if (!localState.gameOver || localState.gameResult?.type !== "timeout") {
-        gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState));
+        gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), reviewApplyOptions());
+        revealReviewScreen();
         updateClockPanel();
       }
       latestVersion = Math.max(latestVersion, version);
@@ -838,26 +1407,26 @@
       if (reason === "observe-start" || reason === "final-observe-start") {
         remoteObservationPreviewUntil = Date.now() + 2800;
         if (reason === "final-observe-start") {
-          gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), {
+          gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), reviewApplyOptions({
             playPlaceSound: true,
             suppressReview: true
-          });
+          }));
         }
         gameApi.playExternalObservationAnimation(reason === "final-observe-start" ? "ラスト\nオープン！" : "オープン！");
         return;
       }
       const animateObservation = reason === "observe" || reason === "final-observe";
       const skipObservationAnimation = animateObservation && Date.now() < remoteObservationPreviewUntil;
-      gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), {
+      gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), reviewApplyOptions({
         animateObservation: animateObservation && !skipObservationAnimation,
         popObservationOnly: animateObservation && skipObservationAnimation,
         playPlaceSound: reason === "move",
         label: reason === "final-observe" ? "ラスト\nオープン！" : "オープン！"
-      });
+      }));
     }
   }
 
-  function bootFirebase() {
+  async function bootFirebase() {
     if (!session) {
       setStatus("オンライン対局の部屋情報がありません。ロビーから入り直してください。", true);
       return;
@@ -869,6 +1438,21 @@
     const app = firebase.apps.length
       ? firebase.app()
       : firebase.initializeApp(window.OthelloFirebaseConfig);
+    const auth = firebase.auth?.(app);
+    if (!auth || !window.CatProfile?.loadProfile) {
+      setStatus("オンライン認証を確認できませんでした。ロビーから入り直してください。", true);
+      return false;
+    }
+    try {
+      const profile = await window.CatProfile.loadProfile();
+      if (!auth.currentUser || auth.currentUser.uid !== session.playerId || profile?.playerId !== session.playerId) {
+        setStatus("オンライン認証を確認できませんでした。ロビーから入り直してください。", true);
+        return false;
+      }
+    } catch (error) {
+      setStatus("オンライン認証を確認できませんでした。ロビーから入り直してください。", true);
+      return false;
+    }
     db = firebase.firestore(app);
     try {
       db.settings({
@@ -880,13 +1464,16 @@
     }
     roomRef = db.collection("rooms").doc(session.roomCode);
     movesRef = roomRef.collection("moves");
+    return true;
   }
 
   window.quantumOthelloConfig = {
     mode: "online",
     optionsFrom: "online",
     stateScope: "online",
+    rules: normalizeMatchRules(session?.matchRules),
     getPlayerColor: () => session?.playerColor || "black",
+    canFinalizeInitialGame: () => session?.playerColor === "black",
     isClockExpired,
     onStateChange: publishState,
     onRender: updateOnlineResourcePanel
@@ -908,13 +1495,30 @@
   });
   window.addEventListener("focus", refreshPresenceNow);
   window.addEventListener("pageshow", refreshPresenceNow);
+  if (backToRoomButton && session?.reviewReturnPath === "mypage.html") {
+    backToRoomButton.textContent = "マイページに戻る";
+  }
   if (backToRoomButton) backToRoomButton.addEventListener("click", navigateToRoomScreen);
 
-  document.addEventListener("quantum-othello:ready", event => {
+  document.addEventListener("quantum-othello:ready", async event => {
     gameApi = event.detail;
     latestClock = defaultClock(gameApi.getState().turn);
-    bootFirebase();
-    if (!roomRef) return;
+    const firebaseReady = await bootFirebase();
+    if (!firebaseReady || !roomRef) {
+      revealReviewScreen();
+      return;
+    }
+    if (isReviewSession()) {
+      updatePlayerNames();
+      updateOnlineActionButtons(gameApi.getState());
+      setStatus(`${session.roomCode} に接続中です。棋譜を読み込んでいます。`);
+      startMovesListener();
+      unsubscribeRoom = roomRef.onSnapshot(applyRoomSnapshot, error => {
+        revealReviewScreen();
+        setStatus("部屋情報の更新に失敗しました。通信環境を確認してください。", true);
+      });
+      return;
+    }
     ready = true;
     updatePlayerNames();
     setStatus(`${session.roomCode} に接続中です。`);
@@ -922,7 +1526,13 @@
     startClockTicker();
     startPresenceTicker();
     startMovesListener();
+    if (pendingPublish) {
+      const nextPublish = pendingPublish;
+      pendingPublish = null;
+      publishState(nextPublish.state, nextPublish.reason);
+    }
     unsubscribeRoom = roomRef.onSnapshot(applyRoomSnapshot, error => {
+      revealReviewScreen();
       setStatus("部屋情報の更新に失敗しました。通信環境を確認してください。", true);
     });
   });

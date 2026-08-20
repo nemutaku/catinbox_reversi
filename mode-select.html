@@ -10,7 +10,7 @@
       sessionStorage.removeItem('othelloPageTransition');
     }
   </script>
-  <link rel="stylesheet" href="style.css?v=20260725-review-fixes-1">
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
 </head>
 <body>
 <section id="titleScreen" class="title-screen" aria-label="モード選択">
@@ -22,8 +22,8 @@
     <button id="onlineBattle" type="button" class="secondary">オンライン対局</button>
     <button id="aiBattle" type="button" class="secondary">AI対局</button>
     <button id="localBattle" type="button">ローカル対局</button>
+    <button id="mypageButton" type="button" class="secondary">マイページ</button>
     <button id="optionsButton" type="button" class="secondary">オプション</button>
-    <button id="feedbackButton" type="button" class="secondary">意見箱</button>
     <button id="titleBack" type="button" class="secondary">タイトルへ戻る</button>
   </div>
 </section>
@@ -130,11 +130,11 @@
     location.href = path;
   };
 
-  document.querySelector('#localBattle').onclick = () => transitionTo('othello-local.html');
-  document.querySelector('#onlineBattle').onclick = () => transitionTo('online.html');
+  document.querySelector('#localBattle').onclick = () => transitionTo('local-select.html');
+  document.querySelector('#onlineBattle').onclick = () => transitionTo('online-select.html');
   document.querySelector('#aiBattle').onclick = () => transitionTo('ai-setup.html');
+  document.querySelector('#mypageButton').onclick = () => transitionTo('mypage.html');
   document.querySelector('#optionsButton').onclick = () => transitionTo('options.html?from=mode');
-  document.querySelector('#feedbackButton').onclick = () => transitionTo('feedback.html');
   document.querySelector('#titleBack').onclick = () => transitionTo('title');
   const primeTitleBgm = document.documentElement.classList.contains('page-entering') || sessionStorage.getItem(audioPrimeKey) === '1';
   sessionStorage.removeItem(audioPrimeKey);

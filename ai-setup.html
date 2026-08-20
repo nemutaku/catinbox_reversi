@@ -10,7 +10,7 @@
       sessionStorage.removeItem('othelloPageTransition');
     }
   </script>
-  <link rel="stylesheet" href="style.css?v=20260725-review-fixes-1">
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
 </head>
 <body>
 <main class="ai-setup-screen">
@@ -36,6 +36,44 @@
         <label class="difficulty-choice"><input type="radio" name="aiDifficulty" value="hard">&#12416;&#12378;&#12363;&#12375;&#12356;</label>
       </div>
     </div>
+
+    <section class="custom-match-box" aria-label="カスタムマッチ設定">
+      <label class="custom-match-toggle">
+        <input id="aiCustomMatchEnabled" type="checkbox">
+        <span>カスタムマッチ</span>
+      </label>
+      <div id="aiCustomMatchSettings" class="custom-match-settings" hidden>
+        <label class="custom-match-field">
+          <span>通常はこ：同色ねこ出現率(%)</span>
+          <input id="aiCustomNormalProbability" type="number" min="0" max="100" step="1" value="80">
+        </label>
+        <label class="custom-match-field">
+          <span>特殊はこ(1)：同色ねこ出現率(%)</span>
+          <input id="aiCustomSpecial0Probability" type="number" min="0" max="100" step="1" value="0">
+        </label>
+        <label class="custom-match-field">
+          <span>特殊はこ(1)使用回数(回)</span>
+          <input id="aiCustomSpecial0Uses" type="number" min="0" max="50" step="1" value="2">
+        </label>
+        <label class="custom-match-field">
+          <span>特殊はこ(2)：同色ねこ出現率(%)</span>
+          <input id="aiCustomSpecial100Probability" type="number" min="0" max="100" step="1" value="100">
+        </label>
+        <label class="custom-match-field">
+          <span>特殊はこ(2)使用回数(回)</span>
+          <input id="aiCustomSpecial100Uses" type="number" min="0" max="50" step="1" value="2">
+        </label>
+        <label class="custom-match-field">
+          <span>オープン！使用回数(回)</span>
+          <input id="aiCustomObserveUses" type="number" min="0" max="50" step="1" value="2">
+        </label>
+        <label class="custom-match-field custom-initial-launch">
+          <span>初期盤面</span>
+          <button id="aiCustomInitialSetupButton" type="button" class="action secondary">初期盤面</button>
+        </label>
+        <button id="aiCustomMatchReset" type="button" class="action secondary custom-match-reset">リセット</button>
+      </div>
+    </section>
   </section>
 
   <div class="ai-setup-actions">
@@ -45,11 +83,23 @@
 </main>
 
 <script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script src="js/custom-match-settings.js?v=20260819-cache-review-1"></script>
 <script>
 (() => {
   const playerColorKey = 'othelloAiPlayerColor';
   const difficultyKey = 'othelloAiDifficulty';
   const clickAudio = window.OthelloAudio?.createMatchAudioController?.();
+  const custom = window.OthelloCustomSettings;
+  const customEnabled = document.querySelector('#aiCustomMatchEnabled');
+  const customSettings = document.querySelector('#aiCustomMatchSettings');
+  const customFields = {
+    normalProbability: document.querySelector('#aiCustomNormalProbability'),
+    special0Probability: document.querySelector('#aiCustomSpecial0Probability'),
+    special0Uses: document.querySelector('#aiCustomSpecial0Uses'),
+    special100Probability: document.querySelector('#aiCustomSpecial100Probability'),
+    special100Uses: document.querySelector('#aiCustomSpecial100Uses'),
+    observeUses: document.querySelector('#aiCustomObserveUses')
+  };
 
   function playClickSound() {
     clickAudio?.playSound?.(window.OthelloAudio.sounds.uiClick, 0.55);
@@ -86,9 +136,38 @@
   syncRadioGroup('playerColor', loadPlayerColor());
   syncRadioGroup('aiDifficulty', loadDifficulty());
 
+  function updateCustomVisibility() {
+    if (customSettings) customSettings.hidden = !customEnabled?.checked;
+  }
+
+  custom?.restoreDraft?.('ai', customEnabled, customFields);
+  custom?.bindNumberClipping?.(customFields);
+  updateCustomVisibility();
+
+  Object.values(customFields).forEach(input => {
+    input?.addEventListener('change', () => custom?.saveDraft?.('ai', customEnabled?.checked, customFields));
+  });
+
+  customEnabled?.addEventListener('change', () => {
+    updateCustomVisibility();
+    custom?.saveDraft?.('ai', customEnabled.checked, customFields);
+  });
+
+  document.querySelector('#aiCustomInitialSetupButton')?.addEventListener('click', () => {
+    custom?.prepareInitialBoard?.('ai-setup.html', customFields);
+    transitionTo('initial-board.html?from=ai');
+  });
+
+  document.querySelector('#aiCustomMatchReset')?.addEventListener('click', () => {
+    playClickSound();
+    custom?.setDefaultForm?.(customFields);
+    custom?.saveDraft?.('ai', customEnabled?.checked, customFields);
+  });
+
   document.querySelector('#startAiBattle').addEventListener('click', () => {
     localStorage.setItem(playerColorKey, selectedValue('playerColor') || 'black');
     localStorage.setItem(difficultyKey, selectedValue('aiDifficulty') || 'easy');
+    custom?.saveDraft?.('ai', customEnabled?.checked, customFields);
     transitionTo('othello-ai.html');
   });
 

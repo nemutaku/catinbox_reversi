@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   const playerColorKey = 'othelloAiPlayerColor';
   const difficultyKey = 'othelloAiDifficulty';
   const corners = new Set(['0,0', '0,7', '7,0', '7,7']);
@@ -46,6 +46,69 @@
     return loadDifficulty();
   }
 
+  function clampProbability(value, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(100, Math.max(0, Math.round(number)));
+  }
+
+  function specialProbability(state, key, fallback) {
+    const probabilities = state.rules?.specialProbabilities || {};
+    return clampProbability(probabilities[key] ?? probabilities[String(key)], fallback);
+  }
+
+  function specialUseLimit(state, key) {
+    const limits = state.rules?.specialUseLimits || {};
+    const value = Number(limits[key] ?? limits[String(key)]);
+    return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 2;
+  }
+
+  function normalProbability(state) {
+    return clampProbability(state.rules?.normalProbability, 80);
+  }
+
+  function zeroSpecialProbability(state) {
+    return specialProbability(state, 0, 0);
+  }
+
+  function highSpecialProbability(state) {
+    return specialProbability(state, 100, 100);
+  }
+
+  function zeroTacticalFactorForProbability(probability) {
+    if (probability > 30) return 0;
+    return Math.max(0, (30 - probability) / 30);
+  }
+
+  function highConfidenceFactorForProbability(probability) {
+    if (probability < 70) return 0;
+    return Math.max(0, (probability - 70) / 30);
+  }
+
+  function zeroTacticalFactor(state) {
+    return zeroTacticalFactorForProbability(zeroSpecialProbability(state));
+  }
+
+  function highConfidenceFactor(state) {
+    return highConfidenceFactorForProbability(highSpecialProbability(state));
+  }
+
+  function bestZeroStrategyOption(state) {
+    const normalFactor = zeroTacticalFactorForProbability(normalProbability(state));
+    const specialFactor = state.specialRemaining?.[0] > 0 ? zeroTacticalFactor(state) : 0;
+    if (normalFactor <= 0 && specialFactor <= 0) return null;
+    if (normalFactor >= specialFactor) return { probability: null, factor: normalFactor };
+    return { probability: 0, factor: specialFactor };
+  }
+
+  function bestHighStrategyOption(state) {
+    const normalFactor = highConfidenceFactorForProbability(normalProbability(state));
+    const specialFactor = state.specialRemaining?.[100] > 0 ? highConfidenceFactor(state) : 0;
+    if (normalFactor <= 0 && specialFactor <= 0) return null;
+    if (normalFactor >= specialFactor) return { probability: null, factor: normalFactor };
+    return { probability: 100, factor: specialFactor };
+  }
+
   function aiColorValue() {
     return getPlayerColor() === 'white' ? 1 : -1;
   }
@@ -55,8 +118,8 @@
     const aiColor = aiColorValue();
     const specialUsed = state.specialUsed?.[aiColor] || {};
     const observeLeft = state.observeUsesLeft?.[aiColor] ?? 0;
-    const special100 = Math.max(0, 2 - Number(specialUsed[100] || 0));
-    const special0 = Math.max(0, 2 - Number(specialUsed[0] || 0));
+    const special100 = Math.max(0, specialUseLimit(state, 100) - Number(specialUsed[100] || 0));
+    const special0 = Math.max(0, specialUseLimit(state, 0) - Number(specialUsed[0] || 0));
     const special100El = document.querySelector('#aiSpecial100');
     const special0El = document.querySelector('#aiSpecial0');
     const observeEl = document.querySelector('#aiObserveLeft');
@@ -90,6 +153,39 @@
 
   function countColorInBoard(board, color) {
     return board.flat().filter(value => value === color).length;
+  }
+
+  function cellStayRate(probBoard, r, c) {
+    return clampProbability(probBoard?.[r]?.[c], 100) / 100;
+  }
+
+  function expectedColorValue(board, probBoard, r, c, color) {
+    if (!board[r][c]) return 0;
+    const stayRate = cellStayRate(probBoard, r, c);
+    return board[r][c] === color ? stayRate : 1 - stayRate;
+  }
+
+  function expectedColorCount(board, probBoard, color) {
+    let total = 0;
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      total += expectedColorValue(board, probBoard, r, c, color);
+    }
+    return total;
+  }
+
+  function expectedCornerCount(board, probBoard, color) {
+    return [[0, 0], [0, 7], [7, 0], [7, 7]]
+      .reduce((sum, [r, c]) => sum + expectedColorValue(board, probBoard, r, c, color), 0);
+  }
+
+  function expectedFrontierCount(board, probBoard, color) {
+    let total = 0;
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      if (!board[r][c]) continue;
+      if (!dirs.some(([dr, dc]) => inside(r + dr, c + dc) && !board[r + dr][c + dc])) continue;
+      total += expectedColorValue(board, probBoard, r, c, color);
+    }
+    return total;
   }
 
   function emptyCountInBoard(board) {
@@ -135,6 +231,14 @@
     next[move.r][move.c] = color;
     for (const [r, c] of move.f) next[r][c] = color;
     return next;
+  }
+
+  function applyMoveWithProbability(board, probBoard, move, color, probability) {
+    const nextBoard = applyMove(board, move, color);
+    const nextProbBoard = copyBoard(probBoard);
+    nextProbBoard[move.r][move.c] = probability;
+    for (const [r, c] of move.f) nextProbBoard[r][c] = probability;
+    return { board: nextBoard, probBoard: nextProbBoard };
   }
 
   function boardsEqual(a, b) {
@@ -263,9 +367,11 @@
     return dirs.some(([dr, dc]) => inside(r + dr, c + dc) && !board[r + dr][c + dc]);
   }
 
-  function cornerStabilityScore(state, move) {
+  function cornerStabilityScore(state, move, probability = normalProbability(state)) {
     if (!cornerOwnedAfterMove(state, move)) return 0;
-    const nextBoard = applyMove(state.board, move, state.aiColor);
+    const next = applyMoveWithProbability(state.board, state.probBoard, move, state.aiColor, probability);
+    const nextBoard = next.board;
+    const cornerConfidence = expectedColorValue(nextBoard, next.probBoard, move.r, move.c, state.aiColor);
     const exposedFlips = move.f.filter(([r, c]) => isFrontierCell(nextBoard, r, c)).length;
     const edgeDirs = [];
     if (move.r === 0) edgeDirs.push([0, move.c === 0 ? 1 : -1]);
@@ -287,7 +393,8 @@
     const longestEdge = Math.max(0, ...connectedEdges);
     const connectedBonus = connectedEdgeStones * 18 + longestEdge * 14;
     const stableShapeBonus = longestEdge >= 4 ? 90 : longestEdge >= 3 ? 50 : longestEdge >= 2 ? 20 : 0;
-    return connectedBonus + stableShapeBonus - exposedFlips * 34 - Math.max(0, move.f.length - 2) * 8;
+    const rawScore = connectedBonus + stableShapeBonus - exposedFlips * 34 - Math.max(0, move.f.length - 2) * 8;
+    return rawScore * (0.35 + cornerConfidence * 0.65);
   }
 
   function isGoodCornerMove(state, move, difficulty) {
@@ -313,7 +420,10 @@
 
   function strategicZeroScore(state, move, difficulty) {
     if (!['normal', 'hard'].includes(difficulty)) return -Infinity;
-    if (state.specialRemaining[0] <= 0 || state.observeUsesLeft[state.aiColor] <= 0) return -Infinity;
+    if (state.observeUsesLeft[state.aiColor] <= 0) return -Infinity;
+    const zeroOption = bestZeroStrategyOption(state);
+    if (!zeroOption) return -Infinity;
+    const zeroFactor = zeroOption.factor;
     if (cornerOwnedAfterMove(state, move)) return -Infinity;
 
     const phase = gamePhase(state);
@@ -335,10 +445,11 @@
     if (frontierTargets >= 3) score += difficulty === 'hard' ? 22 : 14;
     if (phase === 'endgame') score += 10;
     if (difficulty === 'normal') score *= 0.9;
-    return score;
+    return score * (0.35 + zeroFactor * 0.65);
   }
 
   function strategicZeroMove(state, difficulty) {
+    if (!bestZeroStrategyOption(state)) return null;
     const threshold = difficulty === 'hard' ? 88 : 112;
     const candidates = state.legalMoves
       .map(move => ({ move, score: strategicZeroScore(state, move, difficulty) }))
@@ -378,7 +489,11 @@
       if (!state.board[r][c] || state.probBoard[r][c] === 100) continue;
 
       const variant = copyBoard(state.board);
-      if (state.probBoard[r][c] === 0 && state.board[r][c] === state.aiColor) {
+      const flipChance = state.board[r][c] === state.aiColor
+        ? 1 - cellStayRate(state.probBoard, r, c)
+        : cellStayRate(state.probBoard, r, c);
+      if (flipChance <= 0) continue;
+      if (state.board[r][c] === state.aiColor) {
         variant[r][c] = state.playerColor;
       } else if (state.board[r][c] === state.playerColor) {
         variant[r][c] = state.aiColor;
@@ -389,10 +504,10 @@
       const cornerGain = legalCornerCount(variant, state.aiColor) - baseCornerMoves;
       if (cornerGain <= 0) continue;
       const key = `${r},${c}`;
-      score += cornerGain * 65;
-      if (cSquares.has(key)) score += 18;
-      if (xSquares.has(key)) score += 28;
-      if (isFrontierCell(state.board, r, c)) score += 8;
+      score += cornerGain * 65 * flipChance;
+      if (cSquares.has(key)) score += 18 * flipChance;
+      if (xSquares.has(key)) score += 28 * flipChance;
+      if (isFrontierCell(state.board, r, c)) score += 8 * flipChance;
     }
     return score;
   }
@@ -400,7 +515,7 @@
   function projectedForcedObservationBoard(state) {
     const projected = copyBoard(state.board);
     for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-      if (!projected[r][c] || state.probBoard[r][c] !== 0) continue;
+      if (!projected[r][c] || cellStayRate(state.probBoard, r, c) > 0.35) continue;
       projected[r][c] = -projected[r][c];
     }
     return projected;
@@ -439,12 +554,14 @@
     return xSquares.has(key) && nearEmptyCorner && givesCorner;
   }
 
-  function positionalScore(state, move, difficulty) {
+  function positionalScore(state, move, difficulty, probability = normalProbability(state)) {
     const key = `${move.r},${move.c}`;
     let score = move.f.length * (difficulty === 'hard' ? 7 : 4);
-    if (corners.has(key)) score += difficulty === 'hard' ? 90 : 50;
-    if (move.r === 0 || move.r === 7 || move.c === 0 || move.c === 7) score += difficulty === 'hard' ? 12 : 6;
-    const nextBoard = applyMove(state.board, move, state.aiColor);
+    const next = applyMoveWithProbability(state.board, state.probBoard, move, state.aiColor, probability);
+    const nextBoard = next.board;
+    const ownershipConfidence = expectedColorValue(nextBoard, next.probBoard, move.r, move.c, state.aiColor);
+    if (corners.has(key)) score += (difficulty === 'hard' ? 90 : 50) * ownershipConfidence;
+    if (move.r === 0 || move.r === 7 || move.c === 0 || move.c === 7) score += (difficulty === 'hard' ? 12 : 6) * ownershipConfidence;
     if (difficulty === 'normal' || difficulty === 'hard') {
       const nearEmptyCorner = hasEmptyAdjacentCorner(state.board, move);
       if (xSquares.has(key)) score -= difficulty === 'hard'
@@ -453,10 +570,13 @@
       if (cSquares.has(key)) score -= difficulty === 'hard'
         ? (nearEmptyCorner ? 95 : 18)
         : (nearEmptyCorner ? 48 : 10);
-      if (immediateCornerGiveaway(nextBoard, state.playerColor)) score -= difficulty === 'hard' ? 160 : 85;
-      const frontierDelta = frontierCount(nextBoard, state.aiColor) - frontierCount(state.board, state.aiColor);
+      if (immediateCornerGiveaway(nextBoard, state.playerColor)) {
+        const dangerMultiplier = 0.45 + ownershipConfidence * 0.55;
+        score -= (difficulty === 'hard' ? 160 : 85) * dangerMultiplier;
+      }
+      const frontierDelta = expectedFrontierCount(nextBoard, next.probBoard, state.aiColor) - expectedFrontierCount(state.board, state.probBoard, state.aiColor);
       score -= Math.max(0, frontierDelta) * (difficulty === 'hard' ? 8 : 4);
-      if (corners.has(key)) score += cornerStabilityScore(state, move) * (difficulty === 'hard' ? 1.4 : 1);
+      if (corners.has(key)) score += cornerStabilityScore(state, move, probability) * (difficulty === 'hard' ? 1.4 : 1);
     }
     const playerMoveCount = legalMovesFor(nextBoard, state.playerColor).length;
     const aiMoveCount = legalMovesFor(nextBoard, state.aiColor).length;
@@ -504,6 +624,28 @@
       if (roll <= 0) return item;
     }
     return items[items.length - 1];
+  }
+
+  function expectedAiCountAfterObservation(board, probBoard, aiColor) {
+    let total = 0;
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const color = board[r][c];
+      if (!color) continue;
+      const stayRate = clampProbability(probBoard?.[r]?.[c], 100) / 100;
+      total += color === aiColor ? stayRate : 1 - stayRate;
+    }
+    return total;
+  }
+
+  function moveProbabilityOptionsForSearch(state) {
+    const options = [{ probability: null, actualProbability: normalProbability(state) }];
+    if (state.specialRemaining?.[0] > 0 && zeroTacticalFactor(state) > 0) {
+      options.push({ probability: 0, actualProbability: zeroSpecialProbability(state) });
+    }
+    if (state.specialRemaining?.[100] > 0 && highConfidenceFactor(state) > 0) {
+      options.push({ probability: 100, actualProbability: highSpecialProbability(state) });
+    }
+    return options;
   }
 
   function weightedLegalMove(state, weightsByCoord) {
@@ -595,39 +737,39 @@
     })));
   }
 
-  function boardScore(board, aiColor, playerColor, difficulty, objective) {
-    const aiStones = countColorInBoard(board, aiColor);
-    if (objective === 'stoneCount') return aiStones * 10;
+  function boardScore(board, probBoard, aiColor, playerColor, difficulty, objective) {
+    const aiStones = expectedColorCount(board, probBoard, aiColor);
+    if (objective === 'stoneCount') return expectedAiCountAfterObservation(board, probBoard, aiColor) * 10;
 
-    const playerStones = countColorInBoard(board, playerColor);
+    const playerStones = expectedColorCount(board, probBoard, playerColor);
     const aiMoves = legalMovesFor(board, aiColor).length;
     const playerMoves = legalMovesFor(board, playerColor).length;
     const cornerWeight = difficulty === 'hard' ? 45 : difficulty === 'normal' ? 30 : 16;
     const playerCornerMoves = legalMovesFor(board, playerColor).filter(move => corners.has(`${move.r},${move.c}`)).length;
     const frontierPenalty = difficulty === 'hard'
-      ? frontierCount(board, aiColor) * 2
+      ? expectedFrontierCount(board, probBoard, aiColor) * 2
       : difficulty === 'normal'
-        ? frontierCount(board, aiColor)
+        ? expectedFrontierCount(board, probBoard, aiColor)
         : 0;
     return (aiStones - playerStones) * 2
       + (aiMoves - playerMoves) * (difficulty === 'hard' ? 8 : difficulty === 'normal' ? 5 : 2)
-      + (cornerCount(board, aiColor) - cornerCount(board, playerColor)) * cornerWeight
+      + (expectedCornerCount(board, probBoard, aiColor) - expectedCornerCount(board, probBoard, playerColor)) * cornerWeight
       - playerCornerMoves * (difficulty === 'hard' ? 90 : 35)
       - frontierPenalty;
   }
 
-  function searchScore(board, currentColor, depth, aiColor, playerColor, difficulty, objective) {
+  function searchScore(board, probBoard, currentColor, depth, aiColor, playerColor, difficulty, objective, defaultProbability) {
     const legal = legalMovesFor(board, currentColor);
     const opponent = -currentColor;
     const opponentLegal = legalMovesFor(board, opponent);
     if (depth <= 0 || emptyCountInBoard(board) === 0 || (!legal.length && !opponentLegal.length)) {
-      return boardScore(board, aiColor, playerColor, difficulty, objective);
+      return boardScore(board, probBoard, aiColor, playerColor, difficulty, objective);
     }
-    if (!legal.length) return searchScore(board, opponent, depth, aiColor, playerColor, difficulty, objective);
+    if (!legal.length) return searchScore(board, probBoard, opponent, depth, aiColor, playerColor, difficulty, objective, defaultProbability);
 
     const scores = legal.map(move => {
-      const nextBoard = applyMove(board, move, currentColor);
-      return searchScore(nextBoard, opponent, depth - 1, aiColor, playerColor, difficulty, objective);
+      const next = applyMoveWithProbability(board, probBoard, move, currentColor, defaultProbability);
+      return searchScore(next.board, next.probBoard, opponent, depth - 1, aiColor, playerColor, difficulty, objective, defaultProbability);
     });
     return currentColor === aiColor ? Math.max(...scores) : Math.min(...scores);
   }
@@ -656,22 +798,26 @@
       ? moves.filter(move => !isRiskyMove(state, move, difficulty))
       : moves;
     const candidates = saferMoves.length ? saferMoves : moves;
+    const defaultProbability = normalProbability(state);
+    const probabilityOptions = moveProbabilityOptionsForSearch(state);
     return candidates
-      .map(move => {
-        const nextBoard = applyMove(state.board, move, state.aiColor);
-        const search = searchScore(nextBoard, state.playerColor, plan.depth - 1, state.aiColor, state.playerColor, difficulty, plan.objective);
-        const tieBreaker = plan.objective === 'stoneCount' ? move.f.length * 0.05 : positionalScore(state, move, difficulty) * 0.35;
+      .flatMap(move => probabilityOptions.map(option => {
+        const next = applyMoveWithProbability(state.board, state.probBoard, move, state.aiColor, option.actualProbability);
+        const search = searchScore(next.board, next.probBoard, state.playerColor, plan.depth - 1, state.aiColor, state.playerColor, difficulty, plan.objective, defaultProbability);
+        const tieBreaker = plan.objective === 'stoneCount'
+          ? move.f.length * 0.05 + (option.probability === null ? 0 : 0.01)
+          : positionalScore(state, move, difficulty, option.actualProbability) * 0.35;
         const unstableCornerPenalty = cornerOwnedAfterMove(state, move)
-          ? Math.max(0, -cornerStabilityScore(state, move)) * (difficulty === 'hard' ? 1.2 : 0.8)
+          ? Math.max(0, -cornerStabilityScore(state, move, option.actualProbability)) * (difficulty === 'hard' ? 1.2 : 0.8)
           : 0;
-        return { move, score: search + tieBreaker - unstableCornerPenalty, objective: plan.objective };
-      })
+        return { move, probability: option.probability, score: search + tieBreaker - unstableCornerPenalty, objective: plan.objective };
+      }))
       .sort((a, b) => b.score - a.score);
   }
 
-  function bestMove(state, difficulty) {
+  function bestMoveChoice(state, difficulty) {
     const ranked = rankedMoves(state, difficulty);
-    if (difficulty === 'easy') return pickRandom(ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2)))).move;
+    if (difficulty === 'easy') return pickRandom(ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2))));
 
     const bestScore = ranked[0].score;
     const scoreBand = ranked[0].objective === 'stoneCount'
@@ -681,26 +827,36 @@
     const goodMoves = ranked
       .filter(item => item.score >= bestScore - scoreBand)
       .slice(0, poolLimit);
-    if (goodMoves.length <= 1) return ranked[0].move;
+    if (goodMoves.length <= 1) return ranked[0];
     const weighted = goodMoves.map((item, index) => ({
       ...item,
       weight: Math.max(1, Math.pow(goodMoves.length - index, difficulty === 'hard' ? 2 : 1.7))
     }));
-    return pickWeightedItem(weighted).move;
+    return pickWeightedItem(weighted);
+  }
+
+  function bestMove(state, difficulty) {
+    return bestMoveChoice(state, difficulty).move;
   }
 
   function chooseProbability(state, move, difficulty) {
     if (!move) return null;
     const phase = gamePhase(state);
     const outcome = moveOutcome(state, move);
-    if (state.specialRemaining[100] > 0) {
-      if (isGoodCornerMove(state, move, difficulty)) return 100;
+    const highOption = bestHighStrategyOption(state);
+    const highFactor = highOption?.factor || 0;
+    if (highOption && highFactor > 0) {
+      if (isGoodCornerMove(state, move, difficulty) && highFactor >= 0.45) return highOption.probability;
       if (phase === 'opening') return null;
-      if (difficulty === 'hard' && phase === 'middle' && state.specialRemaining[100] <= 1 && !outcome.forcesPass) return null;
-      if (difficulty === 'hard' && (outcome.forcesPass || outcome.score >= 62 || (phase === 'endgame' && move.f.length >= 3))) return 100;
-      if (difficulty === 'normal' && phase !== 'opening' && (outcome.forcesPass || move.f.length >= 5 || (phase === 'endgame' && move.f.length >= 3))) return 100;
+      if (difficulty === 'hard' && phase === 'middle' && state.specialRemaining[100] <= 1 && highOption.probability === 100 && !outcome.forcesPass) return null;
+      const hardScoreThreshold = 62 + (1 - highFactor) * 28;
+      const normalFlipThreshold = highFactor >= 0.75 ? 5 : 6;
+      if (difficulty === 'hard' && (outcome.forcesPass || outcome.score >= hardScoreThreshold || (phase === 'endgame' && move.f.length >= 3 && highFactor >= 0.45))) return highOption.probability;
+      if (difficulty === 'normal' && phase !== 'opening' && highFactor >= 0.45 && (outcome.forcesPass || move.f.length >= normalFlipThreshold || (phase === 'endgame' && move.f.length >= 3))) return highOption.probability;
     }
-    if (difficulty === 'easy' && phase !== 'opening' && state.specialRemaining[0] > 0 && Math.random() < 0.12) return 0;
+    const zeroOption = bestZeroStrategyOption(state);
+    const zeroFactor = zeroOption?.factor || 0;
+    if (difficulty === 'easy' && phase !== 'opening' && zeroFactor >= 0.65 && Math.random() < 0.12 * zeroFactor) return zeroOption.probability;
     return null;
   }
 
@@ -719,8 +875,8 @@
 
     if (difficulty === 'easy') return phase === 'endgame' && uncertain >= 8 && Math.random() < 0.16;
 
-    const aiCount = countColor(state, state.aiColor);
-    const playerCount = countColor(state, state.playerColor);
+    const aiCount = expectedColorCount(state.board, state.probBoard, state.aiColor);
+    const playerCount = expectedColorCount(state.board, state.probBoard, state.playerColor);
     const behind = aiCount < playerCount;
     const occupied = occupiedCount(state);
     if (difficulty === 'normal') return phase !== 'opening' && uncertain >= 9 && behind && Math.random() < (phase === 'endgame' ? 0.5 : 0.28);
@@ -746,13 +902,23 @@
     }
 
     const zeroMove = strategicZeroMove(state, difficulty);
-    if (zeroMove) return { type: 'move', move: zeroMove, probability: 0 };
+    if (zeroMove) {
+      const zeroOption = bestZeroStrategyOption(state);
+      return zeroOption?.probability === null
+        ? { type: 'move', move: zeroMove }
+        : { type: 'move', move: zeroMove, probability: zeroOption.probability };
+    }
 
     if (shouldObserve(state, difficulty)) return { type: 'observe' };
 
-    const move = bestMove(state, difficulty);
-    const probability = chooseProbability(state, move, difficulty);
-    return probability === null ? { type: 'move', move } : { type: 'move', move, probability };
+    const choice = bestMoveChoice(state, difficulty);
+    if (choice.probability !== undefined) {
+      return choice.probability === null
+        ? { type: 'move', move: choice.move }
+        : { type: 'move', move: choice.move, probability: choice.probability };
+    }
+    const probability = chooseProbability(state, choice.move, difficulty);
+    return probability === null ? { type: 'move', move: choice.move } : { type: 'move', move: choice.move, probability };
   }
 
   window.quantumOthelloConfig = {
@@ -760,6 +926,7 @@
     optionsFrom: 'ai',
     stateScope: 'ai',
     newGamePath: 'ai-setup.html',
+    rules: window.OthelloCustomSettings?.loadRules?.('ai') || null,
     getPlayerColor,
     getDifficulty,
     chooseAiAction,
@@ -810,6 +977,10 @@
   setupDifficultyControls();
   document.addEventListener('quantum-othello:ready', onGameReady);
 })();
+
+
+
+
 
 
 

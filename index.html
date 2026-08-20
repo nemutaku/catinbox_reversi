@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>はこ×ねこリバーシ</title>
-  <link rel="stylesheet" href="style.css?v=20260725-review-fixes-1">
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
 </head>
 <body class="shell-body">
 <main id="startScreen" class="start-screen" role="button" tabindex="0" aria-label="タイトル画面">
@@ -43,8 +43,12 @@
   const allowedScreens = new Map([
     ['mode-select.html', 'title'],
     ['ai-setup.html', 'title'],
+    ['online-select.html', 'title'],
     ['online.html', 'title'],
-    ['feedback.html', 'title'],
+    ['local-select.html', 'title'],
+    ['local-custom.html', 'title'],
+    ['initial-board.html', 'title'],
+    ['mypage.html', 'title'],
     ['options.html', 'title'],
     ['othello-local.html', 'match'],
     ['othello-ai.html', 'match'],
@@ -164,6 +168,43 @@
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  function shouldWaitForScreenReady(path) {
+    const normalized = normalizeScreenPath(path);
+    const fileName = normalized?.split('?')[0];
+    if (fileName === 'mypage.html') return true;
+    if (fileName === 'othello-online.html') {
+      try {
+        const onlineSession = JSON.parse(sessionStorage.getItem('othelloOnlineSession') || 'null');
+        return onlineSession?.reviewReturnPath === 'mypage.html';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function waitForScreenReady(path) {
+    if (!shouldWaitForScreenReady(path)) return Promise.resolve();
+    return new Promise(resolve => {
+      let settled = false;
+      const fallback = setTimeout(finish, 20000);
+      function finish() {
+        if (settled) return;
+        settled = true;
+        clearTimeout(fallback);
+        window.removeEventListener('message', onMessage);
+        resolve();
+      }
+      function onMessage(event) {
+        if (event.source !== screenFrame.contentWindow) return;
+        if (event.origin !== 'null' && event.origin !== location.origin) return;
+        const data = event.data || {};
+        if (data.type === 'othello:screen-ready') finish();
+      }
+      window.addEventListener('message', onMessage);
+    });
+  }
+
   async function navigate(path, { click = true } = {}) {
     if (transitioning) return;
     const nextPath = normalizeScreenPath(path);
@@ -185,6 +226,7 @@
       startScreen.hidden = true;
       shellScreen.hidden = false;
       await setFrame(nextPath);
+      await waitForScreenReady(nextPath);
       hideFade();
       await wait(fadeInMs);
       await startBgm(bgmTypeFor(nextPath));

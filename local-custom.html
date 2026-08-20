@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - カスタマイズ</title>
+  <script>
+    if (sessionStorage.getItem('othelloPageTransition') === '1') {
+      document.documentElement.classList.add('page-entering');
+      sessionStorage.removeItem('othelloPageTransition');
+    }
+  </script>
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+</head>
+<body>
+<main class="online-screen local-custom-screen">
+  <h1 class="title-logo">カスタム対局</h1>
+  <p class="sub">ローカル対局の設定を変更します。</p>
+
+  <section class="online-panel" aria-label="ローカル対局カスタマイズ">
+    <section class="custom-match-box" aria-label="カスタムマッチ設定">
+      <div id="localCustomMatchSettings" class="custom-match-settings">
+        <label class="custom-match-field">
+          <span>通常はこ：同色ねこ出現率(%)</span>
+          <input id="localCustomNormalProbability" type="number" min="0" max="100" step="1" value="80">
+        </label>
+        <label class="custom-match-field">
+          <span>特殊はこ(1)：同色ねこ出現率(%)</span>
+          <input id="localCustomSpecial0Probability" type="number" min="0" max="100" step="1" value="0">
+        </label>
+        <label class="custom-match-field">
+          <span>特殊はこ(1)使用回数(回)</span>
+          <input id="localCustomSpecial0Uses" type="number" min="0" max="50" step="1" value="2">
+        </label>
+        <label class="custom-match-field">
+          <span>特殊はこ(2)：同色ねこ出現率(%)</span>
+          <input id="localCustomSpecial100Probability" type="number" min="0" max="100" step="1" value="100">
+        </label>
+        <label class="custom-match-field">
+          <span>特殊はこ(2)使用回数(回)</span>
+          <input id="localCustomSpecial100Uses" type="number" min="0" max="50" step="1" value="2">
+        </label>
+        <label class="custom-match-field">
+          <span>オープン！使用回数(回)</span>
+          <input id="localCustomObserveUses" type="number" min="0" max="50" step="1" value="2">
+        </label>
+        <label class="custom-match-field custom-initial-launch">
+          <span>初期盤面</span>
+          <button id="localCustomInitialSetupButton" type="button" class="secondary">初期盤面</button>
+        </label>
+        <button id="localCustomMatchReset" type="button" class="secondary custom-match-reset">リセット</button>
+      </div>
+    </section>
+  </section>
+
+  <div class="options-actions">
+    <button id="startLocalCustomBattle" type="button">対局開始</button>
+    <button id="backToLocalBattle" type="button" class="secondary">対局選択へ戻る</button>
+  </div>
+</main>
+
+<script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script src="js/custom-match-settings.js?v=20260819-cache-review-1"></script>
+<script>
+(() => {
+  const audio = window.OthelloAudio?.createMatchAudioController?.();
+  const custom = window.OthelloCustomSettings;
+  const customSettings = document.querySelector('#localCustomMatchSettings');
+  const customFields = {
+    normalProbability: document.querySelector('#localCustomNormalProbability'),
+    special0Probability: document.querySelector('#localCustomSpecial0Probability'),
+    special0Uses: document.querySelector('#localCustomSpecial0Uses'),
+    special100Probability: document.querySelector('#localCustomSpecial100Probability'),
+    special100Uses: document.querySelector('#localCustomSpecial100Uses'),
+    observeUses: document.querySelector('#localCustomObserveUses')
+  };
+
+  function playClickSound() {
+    audio?.playSound?.(window.OthelloAudio.sounds.uiClick, 0.55);
+  }
+
+  function transitionTo(path) {
+    playClickSound();
+    if (window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1') {
+      window.parent.postMessage({ type: 'othello:navigate', path, click: false }, '*');
+      return;
+    }
+    location.href = path;
+  }
+
+  const forcedCustomEnabled = { checked: true };
+
+  custom?.restoreDraft?.('local', forcedCustomEnabled, customFields);
+  custom?.bindNumberClipping?.(customFields);
+  if (customSettings) customSettings.hidden = false;
+
+  Object.values(customFields).forEach(input => {
+    input?.addEventListener('change', () => custom?.saveDraft?.('local', true, customFields));
+  });
+
+  document.querySelector('#localCustomInitialSetupButton')?.addEventListener('click', () => {
+    custom?.prepareInitialBoard?.('local-custom.html', customFields);
+    transitionTo('initial-board.html?from=local');
+  });
+
+  document.querySelector('#localCustomMatchReset')?.addEventListener('click', () => {
+    playClickSound();
+    custom?.setDefaultForm?.(customFields);
+    custom?.saveDraft?.('local', true, customFields);
+  });
+
+  document.querySelector('#startLocalCustomBattle')?.addEventListener('click', () => {
+    custom?.saveDraft?.('local', true, customFields);
+    transitionTo('othello-local.html');
+  });
+
+  document.querySelector('#backToLocalBattle')?.addEventListener('click', () => {
+    custom?.saveDraft?.('local', true, customFields);
+    transitionTo('local-select.html');
+  });
+})();
+</script>
+</body>
+</html>

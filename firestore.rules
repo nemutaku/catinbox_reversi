@@ -1,0 +1,148 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isPlayerId(playerId) {
+      return signedIn() && request.auth.uid == playerId;
+    }
+
+    function roomData() {
+      return resource.data;
+    }
+
+    function newRoomData() {
+      return request.resource.data;
+    }
+
+    function isRoomHost() {
+      return signedIn() && roomData().host == request.auth.uid;
+    }
+
+    function isRoomGuest() {
+      return signedIn() && roomData().guest == request.auth.uid;
+    }
+
+    function isRoomPlayer() {
+      return signedIn()
+        && (
+          roomData().host == request.auth.uid
+          || roomData().guest == request.auth.uid
+          || roomData().players.black == request.auth.uid
+          || roomData().players.white == request.auth.uid
+        );
+    }
+
+    function joinedPlayersContainHostAndGuest() {
+      return (
+        newRoomData().players.black == roomData().host
+        && newRoomData().players.white == request.auth.uid
+      ) || (
+        newRoomData().players.white == roomData().host
+        && newRoomData().players.black == request.auth.uid
+      );
+    }
+
+    function isJoiningRoom() {
+      return signedIn()
+        && roomData().status == "waiting"
+        && roomData().host != request.auth.uid
+        && newRoomData().guest == request.auth.uid
+        && newRoomData().status in ["waiting", "matched"]
+        && joinedPlayersContainHostAndGuest();
+    }
+
+    function isCreatingOwnRoom() {
+      return signedIn()
+        && newRoomData().host == request.auth.uid
+        && newRoomData().guest == null
+        && newRoomData().status == "waiting"
+        && newRoomData().matchType in ["friend", "random"];
+    }
+
+    function roomJoinUpdateFieldsAllowed() {
+      return newRoomData().diff(roomData()).affectedKeys().hasOnly([
+        "guest",
+        "players",
+        "playerNames",
+        "playerTitles",
+        "status",
+        "startedAt",
+        "updatedAt"
+      ]);
+    }
+
+    function roomPlayUpdateFieldsAllowed() {
+      return newRoomData().diff(roomData()).affectedKeys().hasOnly([
+        "gameState",
+        "presence",
+        "status",
+        "updatedAt"
+      ]);
+    }
+
+    function roomCoreFieldsUnchanged() {
+      return newRoomData().roomCode == roomData().roomCode
+        && newRoomData().matchType == roomData().matchType
+        && newRoomData().matchRules == roomData().matchRules
+        && newRoomData().host == roomData().host
+        && newRoomData().guest == roomData().guest
+        && newRoomData().players == roomData().players
+        && newRoomData().playerNames == roomData().playerNames
+        && newRoomData().playerTitles == roomData().playerTitles
+        && newRoomData().createdAt == roomData().createdAt
+        && newRoomData().startedAt == roomData().startedAt;
+    }
+
+    function isValidRoomJoinUpdate() {
+      return isJoiningRoom() && roomJoinUpdateFieldsAllowed();
+    }
+
+    function isValidRoomPlayUpdate() {
+      return isRoomPlayer()
+        && roomCoreFieldsUnchanged()
+        && roomPlayUpdateFieldsAllowed();
+    }
+
+    function parentRoom(roomId) {
+      return get(/databases/$(database)/documents/rooms/$(roomId)).data;
+    }
+
+    function isParentRoomPlayer(roomId) {
+      let room = parentRoom(roomId);
+      return signedIn()
+        && (
+          room.host == request.auth.uid
+          || room.guest == request.auth.uid
+          || room.players.black == request.auth.uid
+          || room.players.white == request.auth.uid
+        );
+    }
+
+    match /rooms/{roomId} {
+      allow read: if signedIn();
+      allow create: if isCreatingOwnRoom();
+      allow update: if isValidRoomJoinUpdate() || isValidRoomPlayUpdate();
+      allow delete: if isRoomHost() && roomData().status == "waiting";
+
+      match /moves/{moveId} {
+        allow read: if signedIn();
+        allow create, update: if isParentRoomPlayer(roomId);
+        allow delete: if false;
+      }
+    }
+
+    match /players/{playerId} {
+      allow read, create, update: if isPlayerId(playerId);
+      allow delete: if false;
+
+      match /matches/{matchId} {
+        allow read, create, update: if isPlayerId(playerId);
+        allow delete: if false;
+      }
+    }
+  }
+}

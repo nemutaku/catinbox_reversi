@@ -19,6 +19,7 @@
     constants,
     shownBoard,
     shownProb,
+    shownProbLabels,
     shownObserved,
     legalMoves,
     reviewing,
@@ -51,6 +52,11 @@
           disc.style.backgroundImage = `url("${popAnimations[key]}")`;
         }
         disc.dataset.prob = shownProb[r][c];
+        const probLabel = shownProbLabels?.[r]?.[c];
+        if (probLabel !== undefined && probLabel !== null && probLabel !== '') {
+          disc.dataset.probLabel = probLabel;
+          disc.dataset.probTone = Number(probLabel) >= 50 ? 'warm' : 'cool';
+        }
         cell.append(disc);
       }
       cell.onclick = () => onCellClick(r, c);

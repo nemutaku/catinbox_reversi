@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - オンライン対局選択</title>
+  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+</head>
+<body>
+<main class="online-screen">
+  <h1 class="title-logo">ONLINE</h1>
+  <p class="sub">オンライン対局の方法を選んでください。</p>
+
+  <section class="online-panel" aria-label="オンライン対局選択">
+    <div class="online-actions">
+      <button id="randomBattle" type="button">誰かと対局</button>
+      <button id="friendBattle" type="button" class="secondary">友人と対局</button>
+    </div>
+  </section>
+
+  <div class="options-actions">
+    <button id="modeSelectButton" type="button" class="secondary">モード選択へ戻る</button>
+  </div>
+</main>
+
+<script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script>
+(() => {
+  const clickAudio = window.OthelloAudio?.createMatchAudioController?.();
+
+  function playClickSe() {
+    clickAudio?.playSound?.(window.OthelloAudio.sounds.uiClick, 0.55);
+  }
+
+  function isShellFrame() {
+    return window.parent && window.parent !== window && sessionStorage.getItem('othelloShellAudio') === '1';
+  }
+
+  function navigate(path) {
+    playClickSe();
+    if (isShellFrame()) {
+      window.parent.postMessage({ type: 'othello:navigate', path, click: false }, '*');
+      return;
+    }
+    location.href = path;
+  }
+
+  document.querySelector('#randomBattle').addEventListener('click', () => navigate('online.html?mode=random'));
+  document.querySelector('#friendBattle').addEventListener('click', () => navigate('online.html?mode=friend'));
+  document.querySelector('#modeSelectButton').addEventListener('click', () => navigate('mode-select.html'));
+})();
+</script>
+</body>
+</html>

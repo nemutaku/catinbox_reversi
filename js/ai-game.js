@@ -436,13 +436,10 @@
     const observedBoard = boardAfterZeroObservation(state, move);
     const currentCornerMoves = legalCornerCount(state.board, state.aiColor);
     const cornerGain = legalCornerCount(observedBoard, state.aiColor) - currentCornerMoves;
-    const frontierTargets = moveCells(move).filter(([r, c]) => isFrontierCell(normalBoard, r, c)).length;
-
-    let score = move.f.length * 7 + frontierTargets * 6;
+    let score = 0;
     if (xSquares.has(key) && nearEmptyCorner && hasDiagonalFlip(move)) score += difficulty === 'hard' ? 95 : 70;
     if (cSquares.has(key) && nearEmptyCorner) score += difficulty === 'hard' ? 45 : 30;
     if (cornerGain > 0) score += cornerGain * (difficulty === 'hard' ? 90 : 65);
-    if (frontierTargets >= 3) score += difficulty === 'hard' ? 22 : 14;
     if (phase === 'endgame') score += 10;
     if (difficulty === 'normal') score *= 0.9;
     return score * (0.35 + zeroFactor * 0.65);
@@ -489,9 +486,7 @@
       if (!state.board[r][c] || state.probBoard[r][c] === 100) continue;
 
       const variant = copyBoard(state.board);
-      const flipChance = state.board[r][c] === state.aiColor
-        ? 1 - cellStayRate(state.probBoard, r, c)
-        : cellStayRate(state.probBoard, r, c);
+      const flipChance = 1 - cellStayRate(state.probBoard, r, c);
       if (flipChance <= 0) continue;
       if (state.board[r][c] === state.aiColor) {
         variant[r][c] = state.playerColor;
@@ -508,6 +503,86 @@
       if (cSquares.has(key)) score += 18 * flipChance;
       if (xSquares.has(key)) score += 28 * flipChance;
       if (isFrontierCell(state.board, r, c)) score += 8 * flipChance;
+    }
+    return score + observationEdgeCornerScore(state);
+  }
+
+  function likelyObservedColor(state, r, c, confidence = 0.62) {
+    if (!state.board[r][c]) return 0;
+    const aiExpected = expectedColorValue(state.board, state.probBoard, r, c, state.aiColor);
+    const playerExpected = expectedColorValue(state.board, state.probBoard, r, c, state.playerColor);
+    if (aiExpected >= confidence && aiExpected >= playerExpected) return state.aiColor;
+    if (playerExpected >= confidence && playerExpected >= aiExpected) return state.playerColor;
+    return state.board[r][c];
+  }
+
+  function projectedLikelyObservationBoard(state, confidence = 0.62) {
+    const projected = copyBoard(state.board);
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      projected[r][c] = likelyObservedColor(state, r, c, confidence);
+    }
+    return projected;
+  }
+
+  function cornerEdgeLines() {
+    return [
+      { corner: [0, 0], line: [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0]] },
+      { corner: [0, 0], line: [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6]] },
+      { corner: [0, 7], line: [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7], [6, 7]] },
+      { corner: [0, 7], line: [[0, 6], [0, 5], [0, 4], [0, 3], [0, 2], [0, 1]] },
+      { corner: [7, 0], line: [[6, 0], [5, 0], [4, 0], [3, 0], [2, 0], [1, 0]] },
+      { corner: [7, 0], line: [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5], [7, 6]] },
+      { corner: [7, 7], line: [[6, 7], [5, 7], [4, 7], [3, 7], [2, 7], [1, 7]] },
+      { corner: [7, 7], line: [[7, 6], [7, 5], [7, 4], [7, 3], [7, 2], [7, 1]] }
+    ];
+  }
+
+  function edgeRunCornerScore(state, projected, cornerMove) {
+    const key = `${cornerMove.r},${cornerMove.c}`;
+    let score = 0;
+    for (const edge of cornerEdgeLines()) {
+      if (`${edge.corner[0]},${edge.corner[1]}` !== key) continue;
+      const [cRow, cCol] = edge.line[0];
+      if (projected[cRow][cCol] !== state.playerColor) continue;
+
+      let playerRun = 1;
+      while (playerRun < edge.line.length) {
+        const [r, c] = edge.line[playerRun];
+        if (projected[r][c] !== state.playerColor) break;
+        playerRun++;
+      }
+
+      if (playerRun >= edge.line.length) continue;
+      const [anchorRow, anchorCol] = edge.line[playerRun];
+      if (projected[anchorRow][anchorCol] !== state.aiColor) continue;
+
+      const originalOwnAnchors = edge.line
+        .slice(1)
+        .some(([r, c]) => state.board[r][c] === state.aiColor || expectedColorValue(state.board, state.probBoard, r, c, state.aiColor) >= 0.7);
+      if (!originalOwnAnchors) continue;
+
+      score += 70 + playerRun * 12 + cornerMove.f.length * 8;
+    }
+    return score;
+  }
+
+  function observationEdgeCornerScore(state) {
+    const projected = projectedLikelyObservationBoard(state);
+    const projectedCornerMoves = legalMovesFor(projected, state.aiColor)
+      .filter(move => corners.has(`${move.r},${move.c}`) && state.board[move.r][move.c] === 0);
+    if (!projectedCornerMoves.length) return 0;
+
+    const currentCornerMoves = new Set(
+      legalMovesFor(state.board, state.aiColor)
+        .filter(move => corners.has(`${move.r},${move.c}`))
+        .map(move => `${move.r},${move.c}`)
+    );
+    let score = 0;
+    for (const move of projectedCornerMoves) {
+      const key = `${move.r},${move.c}`;
+      if (currentCornerMoves.has(key)) continue;
+      const edgeScore = edgeRunCornerScore(state, projected, move);
+      score += edgeScore || 85 + move.f.length * 7;
     }
     return score;
   }
@@ -637,12 +712,52 @@
     return total;
   }
 
-  function moveProbabilityOptionsForSearch(state) {
+  function specialUseCost(state, probability, difficulty, plan) {
+    if (probability === null) return 0;
+    const phase = gamePhase(state);
+    const remaining = Number(state.specialRemaining?.[probability] || 0);
+    const limit = Math.max(1, specialUseLimit(state, probability));
+    const usedRatio = Math.max(0, Math.min(1, (limit - remaining) / limit));
+    let cost = difficulty === 'hard' ? 18 : difficulty === 'normal' ? 24 : 30;
+    if (phase === 'opening') cost += difficulty === 'hard' ? 14 : 18;
+    if (phase === 'middle') cost += difficulty === 'hard' ? 6 : 10;
+    cost += usedRatio * (difficulty === 'hard' ? 14 : 18);
+    if (remaining <= 1) cost += difficulty === 'hard' ? 16 : 22;
+    if (plan?.objective === 'stoneCount') cost *= 0.45;
+    return cost;
+  }
+
+  function isHighValueSpecialMove(state, move, probability, difficulty, plan) {
+    if (probability === null) return true;
+    if (Number(state.specialRemaining?.[probability] || 0) <= 0) return false;
+    const phase = gamePhase(state);
+    const outcome = moveOutcome(state, move);
+    if (plan?.objective === 'stoneCount' || phase === 'endgame') return true;
+    if (outcome.forcesPass && outcome.score >= (difficulty === 'hard' ? 36 : 48)) return true;
+
+    if (probability === 100) {
+      const factor = highConfidenceFactor(state);
+      if (factor <= 0) return false;
+      if (isGoodCornerMove(state, move, difficulty) && factor >= 0.45) return true;
+      return outcome.score >= 74 + (1 - factor) * 24;
+    }
+
+    if (probability === 0) {
+      const factor = zeroTacticalFactor(state);
+      if (factor <= 0) return false;
+      const threshold = difficulty === 'hard' ? 96 : 122;
+      return strategicZeroScore(state, move, difficulty) >= threshold;
+    }
+
+    return false;
+  }
+
+  function moveProbabilityOptionsForSearch(state, move, difficulty, plan) {
     const options = [{ probability: null, actualProbability: normalProbability(state) }];
-    if (state.specialRemaining?.[0] > 0 && zeroTacticalFactor(state) > 0) {
+    if (state.specialRemaining?.[0] > 0 && zeroTacticalFactor(state) > 0 && isHighValueSpecialMove(state, move, 0, difficulty, plan)) {
       options.push({ probability: 0, actualProbability: zeroSpecialProbability(state) });
     }
-    if (state.specialRemaining?.[100] > 0 && highConfidenceFactor(state) > 0) {
+    if (state.specialRemaining?.[100] > 0 && highConfidenceFactor(state) > 0 && isHighValueSpecialMove(state, move, 100, difficulty, plan)) {
       options.push({ probability: 100, actualProbability: highSpecialProbability(state) });
     }
     return options;
@@ -799,18 +914,18 @@
       : moves;
     const candidates = saferMoves.length ? saferMoves : moves;
     const defaultProbability = normalProbability(state);
-    const probabilityOptions = moveProbabilityOptionsForSearch(state);
     return candidates
-      .flatMap(move => probabilityOptions.map(option => {
+      .flatMap(move => moveProbabilityOptionsForSearch(state, move, difficulty, plan).map(option => {
         const next = applyMoveWithProbability(state.board, state.probBoard, move, state.aiColor, option.actualProbability);
         const search = searchScore(next.board, next.probBoard, state.playerColor, plan.depth - 1, state.aiColor, state.playerColor, difficulty, plan.objective, defaultProbability);
         const tieBreaker = plan.objective === 'stoneCount'
-          ? move.f.length * 0.05 + (option.probability === null ? 0 : 0.01)
+          ? move.f.length * 0.05
           : positionalScore(state, move, difficulty, option.actualProbability) * 0.35;
         const unstableCornerPenalty = cornerOwnedAfterMove(state, move)
           ? Math.max(0, -cornerStabilityScore(state, move, option.actualProbability)) * (difficulty === 'hard' ? 1.2 : 0.8)
           : 0;
-        return { move, probability: option.probability, score: search + tieBreaker - unstableCornerPenalty, objective: plan.objective };
+        const cost = specialUseCost(state, option.probability, difficulty, plan);
+        return { move, probability: option.probability, score: search + tieBreaker - unstableCornerPenalty - cost, objective: plan.objective };
       }))
       .sort((a, b) => b.score - a.score);
   }
@@ -877,11 +992,13 @@
 
     const aiCount = expectedColorCount(state.board, state.probBoard, state.aiColor);
     const playerCount = expectedColorCount(state.board, state.probBoard, state.playerColor);
-    const behind = aiCount < playerCount;
     const occupied = occupiedCount(state);
-    if (difficulty === 'normal') return phase !== 'opening' && uncertain >= 9 && behind && Math.random() < (phase === 'endgame' ? 0.5 : 0.28);
+    const behindBy = playerCount - aiCount;
+    if (difficulty === 'normal') {
+      return phase === 'endgame' && uncertain >= 10 && behindBy >= 4 && Math.random() < 0.35;
+    }
     if (phase === 'middle' && state.observeUsesLeft[state.aiColor] <= 1 && occupied < 36) return false;
-    return uncertain >= 7 && (behind || occupied >= 46);
+    return phase === 'endgame' && occupied >= 50 && uncertain >= 7 && behindBy >= 2;
   }
 
   function chooseAiAction(state) {

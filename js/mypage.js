@@ -4,9 +4,11 @@
   const profileStore = window.CatProfile;
 
   const nameInput = document.querySelector("#profileName");
-  const titleSelect = document.querySelector("#profileTitle");
+  const currentTitleDisplay = document.querySelector("#currentTitleDisplay");
+  const openTitleListButton = document.querySelector("#openTitleList");
+  const openMyDataButton = document.querySelector("#openMyData");
+  const mypageButton = document.querySelector("#mypageButton");
   const nameStatus = document.querySelector("#profileNameStatus");
-  const titleStatus = document.querySelector("#profileTitleStatus");
   const historyList = document.querySelector("#matchHistoryList");
   const historyTabs = Array.from(document.querySelectorAll("[data-match-filter]"));
   const modeSelectButton = document.querySelector("#modeSelectButton");
@@ -38,7 +40,8 @@
 
   function notifyScreenReady() {
     if (window.parent && window.parent !== window && sessionStorage.getItem("othelloShellAudio") === "1") {
-      window.parent.postMessage({ type: "othello:screen-ready", path: "mypage.html" }, "*");
+      const path = location.pathname.split("/").pop() || "mypage.html";
+      window.parent.postMessage({ type: "othello:screen-ready", path }, "*");
     }
   }
 
@@ -103,9 +106,27 @@
     if (randomDrawsValue) randomDrawsValue.textContent = String(stats.draws);
   }
 
+  async function renderCurrentTitle(profile = currentProfile || {}) {
+    const catalog = profileStore?.loadTitleCatalog
+      ? await profileStore.loadTitleCatalog()
+      : [{ id: "newbie_cat", name: "新米ねこ", type: "normal" }];
+    const currentTitleId = profileStore?.normalizeTitleId
+      ? profileStore.normalizeTitleId(profile.titleId || profile.title, catalog)
+      : "newbie_cat";
+    const currentTitle = catalog.find(title => title.id === currentTitleId);
+    if (currentTitleDisplay) {
+      const rarity = profileStore?.normalizeTitleRarity
+        ? profileStore.normalizeTitleRarity(currentTitle?.rarity, currentTitle?.type)
+        : currentTitle?.rarity ?? (currentTitle?.type === "special" ? 0 : 1);
+      currentTitleDisplay.textContent = currentTitle?.name || profile.title || "新米ねこ";
+      currentTitleDisplay.dataset.rarity = String(rarity);
+      currentTitleDisplay.classList.add("title-rarity-bg");
+    }
+  }
+
   function openHistory(record) {
     if (!record?.roomCode || !record?.playerId || !record?.playerColor) {
-      setStatus(titleStatus, "この棋譜は開けませんでした。", true);
+      setStatus(nameStatus, "この棋譜は開けませんでした。", true);
       return;
     }
     const session = {
@@ -155,16 +176,18 @@
     if (historyList) historyList.innerHTML = '<p class="mypage-empty">棋譜を読み込んでいます...</p>';
     currentProfile = await loadProfile();
     if (nameInput) nameInput.value = profileStore?.sanitizeName(currentProfile.name) || "ねこさん";
-    if (titleSelect) titleSelect.value = profileStore?.normalizeTitle(currentProfile.title) || "新米ねこ";
+    await renderCurrentTitle(currentProfile);
     renderProfileStats(currentProfile);
     if (currentProfile.offline) {
       setStatus(nameStatus, "通信できないため、この端末内のデータを表示しています。", true);
     }
 
-    currentHistory = profileStore
-      ? await profileStore.loadMatchHistory(100)
-      : [];
-    renderHistory(currentHistory);
+    if (historyList) {
+      currentHistory = profileStore
+        ? await profileStore.loadMatchHistory(100)
+        : [];
+      renderHistory(currentHistory);
+    }
   }
 
   document.querySelector("#saveProfileName")?.addEventListener("click", async () => {
@@ -177,7 +200,7 @@
     try {
       currentProfile = profileStore
         ? await profileStore.saveProfile({ name })
-        : { name, title: titleSelect?.value || "新米ねこ", offline: true };
+        : { name, title: currentTitleDisplay?.textContent || "新米ねこ", offline: true };
       if (nameInput) nameInput.value = currentProfile.name;
       renderProfileStats(currentProfile);
       setStatus(nameStatus, currentProfile.offline ? "この端末内に名前を保存しました。" : "名前を保存しました。", Boolean(currentProfile.offline));
@@ -186,20 +209,9 @@
     }
   });
 
-  document.querySelector("#saveProfileTitle")?.addEventListener("click", async () => {
-    playClickSe();
-    const title = profileStore?.normalizeTitle(titleSelect?.value) || "新米ねこ";
-    try {
-      currentProfile = profileStore
-        ? await profileStore.saveProfile({ title })
-        : { name: nameInput?.value || "ねこさん", title, offline: true };
-      if (titleSelect) titleSelect.value = currentProfile.title;
-      renderProfileStats(currentProfile);
-      setStatus(titleStatus, currentProfile.offline ? "この端末内に称号を保存しました。" : "称号を保存しました。", Boolean(currentProfile.offline));
-    } catch {
-      setStatus(titleStatus, "称号を保存できませんでした。通信環境を確認してください。", true);
-    }
-  });
+  openTitleListButton?.addEventListener("click", () => navigate("title-list.html"));
+  openMyDataButton?.addEventListener("click", () => navigate("mydata.html"));
+  mypageButton?.addEventListener("click", () => navigate("mypage.html"));
 
   historyTabs.forEach(tab => {
     tab.addEventListener("click", () => {

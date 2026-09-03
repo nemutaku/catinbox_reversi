@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - 称号一覧</title>
+  <link rel="stylesheet" href="style.css?v=20260901-title-toggle-close-1">
+</head>
+<body>
+<main class="mypage-screen">
+  <h1 class="title-logo">称号一覧</h1>
+  <p class="sub">獲得した称号を選んでセットできます。</p>
+
+  <section class="mypage-panel" aria-label="称号一覧">
+    <div class="title-list-tabs" role="tablist" aria-label="称号の種類">
+      <button class="history-tab active" type="button" role="tab" aria-selected="true" data-title-filter="normal">ノーマル称号</button>
+      <button class="history-tab" type="button" role="tab" aria-selected="false" data-title-filter="special">スペシャル称号</button>
+    </div>
+    <div id="titleList" class="title-list" aria-live="polite"></div>
+  </section>
+
+  <div class="options-actions">
+    <button id="mypageButton" class="action secondary" type="button">マイページに戻る</button>
+  </div>
+</main>
+
+<script src="js/audio.js?v=20260829-file-audio-fallback-1"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js?v=20260715-1"></script>
+<script src="js/profile.js?v=20260831-title-comment-1"></script>
+<script src="js/title-list.js?v=20260901-title-toggle-close-1"></script>
+</body>
+</html>

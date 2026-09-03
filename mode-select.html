@@ -10,7 +10,7 @@
       sessionStorage.removeItem('othelloPageTransition');
     }
   </script>
-  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+  <link rel="stylesheet" href="style.css?v=20260901-title-toggle-close-1">
 </head>
 <body>
 <section id="titleScreen" class="title-screen" aria-label="モード選択">
@@ -27,7 +27,8 @@
     <button id="titleBack" type="button" class="secondary">タイトルへ戻る</button>
   </div>
 </section>
-<script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script src="js/audio.js?v=20260829-file-audio-fallback-1"></script>
+<script src="js/title-unlock-popup.js?v=20260831-title-comment-1"></script>
 <script>
   const audioSettingsKey = 'othelloAudioSettings';
   const audioStateKey = 'othelloBgmState';

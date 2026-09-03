@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>はこ×ねこリバーシ - 初期盤面</title>
-  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+  <link rel="stylesheet" href="style.css?v=20260901-title-toggle-close-1">
 </head>
 <body class="initial-board-page">
 <main class="initial-board-editor">
@@ -25,14 +25,20 @@
         <select id="initialPiece">
           <option value="cat">ねこ</option>
           <option value="box">通常はこ</option>
-          <option value="special0">0%はこ</option>
-          <option value="special100">100%はこ</option>
+          <option value="special0">特殊はこ(1)</option>
+          <option value="special100">特殊はこ(2)</option>
           <option value="empty">削除</option>
         </select>
       </label>
     </div>
 
-    <div id="initialBoard" class="initial-board-grid" role="grid" aria-label="初期盤面エディタ"></div>
+    <section class="board-wrap initial-board-wrap" aria-label="初期盤面エディタ">
+      <div class="coord-top" aria-hidden="true"><span></span><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+      <div class="board-row">
+        <div class="coord-left" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+        <div id="initialBoard" role="grid" aria-label="初期盤面エディタ"></div>
+      </div>
+    </section>
 
     <div class="initial-board-actions">
       <button id="initialReset" type="button" class="secondary">標準配置に戻す</button>
@@ -42,8 +48,8 @@
   </section>
 </main>
 
-<script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script src="js/audio.js?v=20260829-file-audio-fallback-1"></script>
 <script src="js/custom-match-settings.js?v=20260819-cache-review-1"></script>
-<script src="js/initial-board.js?v=20260816-initial-board-save-1"></script>
+<script src="js/initial-board.js?v=20260822-special-box-label-1"></script>
 </body>
 </html>

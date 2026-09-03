@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>はこ×ねこリバーシ - マイデータ</title>
+  <link rel="stylesheet" href="style.css?v=20260901-title-toggle-close-1">
+</head>
+<body>
+<main class="mypage-screen">
+  <h1 class="title-logo">マイデータ</h1>
+  <p class="sub">ログイン日数やランダム戦の戦績を確認できます。</p>
+
+  <section class="mypage-panel" aria-label="プレイヤーデータ">
+    <h2 class="panel-title">プレイヤーデータ</h2>
+    <div class="mydata-section" aria-label="ログイン関連">
+      <h3>ログイン関連</h3>
+      <div class="mypage-data-list">
+        <div class="mypage-data-card">
+          <span>ログイン日数</span>
+          <strong id="loginDaysValue">--日</strong>
+        </div>
+        <div class="mypage-data-card">
+          <span>連続ログイン</span>
+          <strong id="currentLoginStreakValue">--日</strong>
+        </div>
+        <div class="mypage-data-card">
+          <span>最長連続ログイン</span>
+          <strong id="longestLoginStreakValue">--日</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="mydata-section" aria-label="ランダム戦関連">
+      <h3>ランダム戦関連</h3>
+      <div class="mypage-data-list">
+        <div class="mypage-data-card">
+          <span>肉球ポイント</span>
+          <strong id="pawPointsValue">--</strong>
+        </div>
+        <div class="mypage-data-card">
+          <span>対局数</span>
+          <strong id="randomGamesValue">--局</strong>
+        </div>
+        <div class="mypage-data-card win">
+          <span>勝利</span>
+          <strong id="randomWinsValue">--</strong>
+        </div>
+        <div class="mypage-data-card loss">
+          <span>敗北</span>
+          <strong id="randomLossesValue">--</strong>
+        </div>
+        <div class="mypage-data-card draw">
+          <span>引き分け</span>
+          <strong id="randomDrawsValue">--</strong>
+        </div>
+      </div>
+    </div>
+    <p id="profileNameStatus" class="mypage-status" aria-live="polite"></p>
+  </section>
+
+  <div class="options-actions">
+    <button id="mypageButton" class="action secondary" type="button">マイページに戻る</button>
+  </div>
+</main>
+
+<script src="js/audio.js?v=20260829-file-audio-fallback-1"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js?v=20260715-1"></script>
+<script src="js/profile.js?v=20260831-title-comment-1"></script>
+<script src="js/mypage.js?v=20260830-mydata-page-1"></script>
+</body>
+</html>

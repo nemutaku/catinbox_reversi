@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>はこ×ねこリバーシ - オンライン対局</title>
-  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+  <link rel="stylesheet" href="style.css?v=20260901-title-toggle-close-1">
 </head>
-<body>
+<body class="online-game-body">
 <script>
 window.addEventListener("error", event => {
   const status = document.getElementById("onlineGameStatus");
@@ -38,6 +38,7 @@ window.addEventListener("unhandledrejection", event => {
           <div class="resource-item"><span>あいて 0%はこ</span><b id="onlineOpponentSpecial0">あと2回</b></div>
         </div>
       </section>
+      <div id="onlineOpponentClockSlot" class="inline-clock-slot opponent-clock" aria-label="相手の名前と残り時間"></div>
       <section class="board-wrap" aria-label="オセロ盤">
         <div class="coord-top" aria-hidden="true"><span></span><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
         <div class="board-row">
@@ -45,6 +46,7 @@ window.addEventListener("unhandledrejection", event => {
           <div id="board" role="grid" aria-label="オセロ盤"></div>
         </div>
       </section>
+      <div id="onlinePlayerClockSlot" class="inline-clock-slot player-clock" aria-label="自分の名前と残り時間"></div>
       <div class="special-actions online-play-actions" aria-label="特殊はこ">
         <button id="observe" class="action secondary" type="button">オープン！(あと2回)</button>
         <button id="special100" class="action secondary" type="button">100%はこ</button>
@@ -52,15 +54,14 @@ window.addEventListener("unhandledrejection", event => {
       </div>
     </div>
     <aside>
-      <section class="panel online-clock-panel" aria-label="制限時間">
-        <h2 class="panel-title">制限時間</h2>
-        <div class="clock-grid">
+      <section class="online-clock-panel" aria-label="制限時間">
+        <div id="clockGrid" class="clock-grid">
           <div class="clock-item" data-clock-player="black"><span>黒</span><em id="onlineBlackTitle" class="player-title-badge">新米ねこ</em><strong id="onlineBlackName" class="online-player-name">--</strong><b id="onlineBlackClock">5:00</b><em id="onlineBlackDisconnect" class="disconnect-notice" hidden>接続切れ</em></div>
           <div class="clock-item" data-clock-player="white"><span>白</span><em id="onlineWhiteTitle" class="player-title-badge">新米ねこ</em><strong id="onlineWhiteName" class="online-player-name">--</strong><b id="onlineWhiteClock">5:00</b><em id="onlineWhiteDisconnect" class="disconnect-notice" hidden>接続切れ</em></div>
         </div>
       </section>
       <section class="online-game-actions" aria-label="オンライン対局操作">
-        <section id="pawPointResult" class="paw-point-result" aria-label="肉球ポイント" hidden></section>
+        <button id="pawPointResultButton" class="action secondary paw-point-result-button" type="button" hidden>肉球ポイントを確認する</button>
         <button id="onlineResign" class="action secondary" type="button">投了する</button>
         <button id="onlineBackToRoom" class="action" type="button" hidden>対局選択へ戻る</button>
       </section>
@@ -83,13 +84,13 @@ window.addEventListener("unhandledrejection", event => {
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
 <script src="js/firebase-config.js?v=20260715-1"></script>
-<script src="js/profile.js?v=20260819-paw-points-2"></script>
-<script src="js/online-game.js?v=20260819-paw-points-2"></script>
+<script src="js/profile.js?v=20260831-title-comment-1"></script>
+<script src="js/online-game.js?v=20260830-resign-clears-session-1"></script>
 <script src="js/othello-rules.js"></script>
-<script src="js/audio.js?v=20260726-webaudio-1"></script>
-<script src="js/game-storage.js?v=20260802-prob-label-2"></script>
+<script src="js/audio.js?v=20260829-file-audio-fallback-1"></script>
+<script src="js/game-storage.js?v=20260822-last-open-rates-1"></script>
 <script src="js/game-view.js?v=20260802-prob-label-2"></script>
-<script src="js/game.js?v=20260816-local-select-2"></script>
+<script src="js/game.js?v=20260822-last-open-meow-1"></script>
 </body>
 </html>
 

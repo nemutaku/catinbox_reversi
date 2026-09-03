@@ -12,6 +12,14 @@
           return value === undefined || value === null ? '' : String(value);
         })
       );
+      const normalizeWinRates = source => {
+        if (!source || typeof source !== 'object') return null;
+        const black = Number(source.black);
+        const white = Number(source.white);
+        const draw = Number(source.draw);
+        if (![black, white, draw].every(Number.isFinite)) return null;
+        return { black, white, draw };
+      };
       return {
         board: copy(state.board),
         probBoard: copy(state.probBoard),
@@ -29,6 +37,8 @@
         })) : [],
         reviewIndex: Number.isInteger(state.reviewIndex) ? state.reviewIndex : null,
         gameOver: Boolean(state.gameOver),
+        gameResult: state.gameResult || null,
+        lastOpenWinRates: normalizeWinRates(state.lastOpenWinRates),
         selectedSpecial: state.selectedSpecial === 100 || state.selectedSpecial === 0 ? state.selectedSpecial : null,
         specialUsed: state.specialUsed || {
           [B]: { 100: 0, 0: 0 },

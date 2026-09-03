@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>はこ×ねこリバーシ - オンラインロビー</title>
-  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+  <link rel="stylesheet" href="style.css?v=20260901-title-toggle-close-1">
   <script>
     if (new URLSearchParams(location.search).get("mode") === "random") {
       document.documentElement.classList.add("online-random-mode");
@@ -18,6 +18,10 @@
 
   <section class="online-panel" aria-label="オンライン対局">
     <div id="friendRoomPanel" class="online-actions">
+      <div id="roomInfo" class="room-info" aria-live="polite">
+        <span>現在の部屋ID</span>
+        <strong id="roomCode">------</strong>
+      </div>
       <button id="createRoom" type="button">部屋を作る</button>
       <label class="room-join">
         <span>部屋IDで参加</span>
@@ -62,6 +66,10 @@
             <span>オープン！使用回数(回)</span>
             <input id="customObserveUses" type="number" min="0" max="50" step="1" value="2">
           </label>
+          <label class="custom-match-field">
+            <span>制限時間(秒)</span>
+            <input id="customMatchTimeSeconds" type="number" min="30" max="1200" step="30" value="300">
+          </label>
           <label class="custom-match-field custom-initial-launch">
             <span>初期盤面</span>
             <button id="customInitialSetupButton" type="button" class="secondary">初期盤面</button>
@@ -84,8 +92,8 @@
                 <select id="customInitialPiece">
                   <option value="cat">ねこ</option>
                   <option value="box">通常はこ</option>
-                  <option value="special0">0%はこ</option>
-                  <option value="special100">100%はこ</option>
+                  <option value="special0">特殊はこ(1)</option>
+                  <option value="special100">特殊はこ(2)</option>
                   <option value="empty">削除</option>
                 </select>
               </label>
@@ -96,11 +104,6 @@
           <button id="customMatchReset" type="button" class="secondary custom-match-reset">リセット</button>
         </div>
       </section>
-    </div>
-
-    <div id="roomInfo" class="room-info" aria-live="polite">
-      <span>現在の部屋ID</span>
-      <strong id="roomCode">------</strong>
     </div>
 
     <section id="randomRoomPanel" class="random-match-panel" aria-live="polite" hidden>
@@ -147,10 +150,10 @@
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js" onerror="showOnlineScriptError('Firebase app SDK')"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-auth-compat.js" onerror="showOnlineScriptError('Firebase auth SDK')"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js" onerror="showOnlineScriptError('Firebase firestore SDK')"></script>
-<script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script src="js/audio.js?v=20260829-file-audio-fallback-1"></script>
 <script src="js/firebase-config.js?v=20260715-1"></script>
-<script src="js/profile.js?v=20260819-paw-points-2"></script>
-<script src="js/online.js?v=20260815-review-fixes-1"></script>
+<script src="js/profile.js?v=20260831-title-comment-1"></script>
+<script src="js/online.js?v=20260830-resume-session-validate-1"></script>
 </body>
 </html>
 

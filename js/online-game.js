@@ -2,7 +2,7 @@
   const sessionKey = "othelloOnlineSession";
   const persistentSessionKey = "othelloOnlineLastSession";
   const matchHistoryKey = "catinboxMatchHistory";
-  const matchTimeMs = 5 * 60 * 1000;
+  const defaultMatchTimeMs = 5 * 60 * 1000;
   const presenceHealthyIntervalMs = 30 * 1000;
   const presenceRetryIntervalMs = 10 * 1000;
   const presenceWarningMs = presenceHealthyIntervalMs;
@@ -20,6 +20,12 @@
   }
 
   const session = readSession();
+  function normalizeMatchTimeMs(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return defaultMatchTimeMs;
+    return Math.min(20 * 60 * 1000, Math.max(30 * 1000, Math.round(number)));
+  }
+  const matchTimeMs = normalizeMatchTimeMs(session?.matchRules?.matchTimeMs ?? Number(session?.matchRules?.matchTimeSeconds) * 1000);
   const isReviewSession = () => session?.reviewReturnPath === "mypage.html";
   let reviewScreenRevealed = false;
   let reviewScreenReadyNotified = false;
@@ -62,6 +68,8 @@
   let publishing = false;
   let pendingPublish = null;
   let remoteObservationPreviewUntil = 0;
+  let remoteObservationLabelUntil = 0;
+  let delayedObservationTimer = null;
   let latestClock = null;
   let clockInterval = null;
   let presenceInterval = null;
@@ -70,6 +78,8 @@
   const presenceLastSeenAt = { black: 0, white: 0 };
   const presenceVersionKeys = { black: "", white: "" };
   let latestRoomData = null;
+  let latestPawPointRecord = null;
+  let pawPointDialogTimer = null;
   let timeoutPublishing = false;
   let timeoutPublished = false;
   let disconnectPublishing = false;
@@ -81,12 +91,71 @@
   let serverClockAnchorMs = null;
   let localClockAnchorMs = null;
   let savedMatchHistoryKey = "";
-  const allowedPlayerTitles = new Set(["新米ねこ", "アマチュアねこ", "ボスねこ"]);
+  let titleCatalog = [];
   const resignButton = document.querySelector("#onlineResign");
+  const pawPointResultButton = document.querySelector("#pawPointResultButton");
   const backToRoomButton = document.querySelector("#onlineBackToRoom");
   const resignConfirm = document.querySelector("#resignConfirm");
   const confirmResignButton = document.querySelector("#confirmResign");
   const cancelResignButton = document.querySelector("#cancelResign");
+  const opponentClockSlot = document.querySelector("#onlineOpponentClockSlot");
+  const playerClockSlot = document.querySelector("#onlinePlayerClockSlot");
+  const blackClockItem = document.querySelector('[data-clock-player="black"]');
+  const whiteClockItem = document.querySelector('[data-clock-player="white"]');
+  const blackScoreItem = document.querySelector(".black-score");
+  const whiteScoreItem = document.querySelector(".white-score");
+
+  function prepareClockScoreBox(clockItem, scoreItem) {
+    if (!clockItem || !scoreItem) return;
+    scoreItem.classList.add("clock-score-box");
+    scoreItem.querySelector(".clock-score-color")?.remove();
+    const pieceBox = clockItem.querySelector(".clock-piece-box");
+    const icons = scoreItem.querySelector(".score-icons");
+    const movedIcons = pieceBox?.querySelector(".score-icons");
+    const scoreValue = scoreItem.querySelector("b");
+    if (!icons && movedIcons) {
+      if (scoreValue) scoreItem.insertBefore(movedIcons, scoreValue);
+      else scoreItem.appendChild(movedIcons);
+    }
+    pieceBox?.remove();
+  }
+
+  function prepareInlineClockItem(clockItem, scoreItem) {
+    if (!clockItem) return;
+    prepareClockScoreBox(clockItem, scoreItem);
+    if (clockItem.querySelector(".clock-time-box")) {
+      if (scoreItem && scoreItem.parentElement !== clockItem) clockItem.appendChild(scoreItem);
+      return;
+    }
+    const colorLabel = clockItem.querySelector("span");
+    const title = clockItem.querySelector(".player-title-badge");
+    const name = clockItem.querySelector(".online-player-name");
+    const time = clockItem.querySelector("b");
+    const disconnect = clockItem.querySelector(".disconnect-notice");
+    const identityBox = document.createElement("div");
+    const timeBox = document.createElement("div");
+    identityBox.className = "clock-identity-box";
+    timeBox.className = "clock-time-box";
+    if (title) identityBox.appendChild(title);
+    if (name) identityBox.appendChild(name);
+    if (time) timeBox.appendChild(time);
+    clockItem.replaceChildren();
+    if (colorLabel) clockItem.appendChild(colorLabel);
+    clockItem.appendChild(timeBox);
+    clockItem.appendChild(identityBox);
+    if (scoreItem) clockItem.appendChild(scoreItem);
+    if (disconnect) clockItem.appendChild(disconnect);
+  }
+
+  function arrangeClockItems() {
+    if (!opponentClockSlot || !playerClockSlot || !blackClockItem || !whiteClockItem) return;
+    prepareInlineClockItem(blackClockItem, blackScoreItem);
+    prepareInlineClockItem(whiteClockItem, whiteScoreItem);
+    const playerItem = session?.playerColor === "white" ? whiteClockItem : blackClockItem;
+    const opponentItem = playerItem === blackClockItem ? whiteClockItem : blackClockItem;
+    opponentClockSlot.appendChild(opponentItem);
+    playerClockSlot.appendChild(playerItem);
+  }
 
   function setStatus(message, isError = false) {
     const statusEl = document.querySelector("#onlineGameStatus");
@@ -109,7 +178,36 @@
   }
 
   function normalizePlayerTitle(value) {
-    return allowedPlayerTitles.has(value) ? value : "新米ねこ";
+    return String(value || "新米ねこ").trim().slice(0, 16) || "新米ねこ";
+  }
+
+  function titleByName(title) {
+    const normalized = String(title || "").trim();
+    return titleCatalog.find(item => item.name === normalized) || null;
+  }
+
+  function applyTitleRarityBackground(element, title) {
+    if (!element) return;
+    const matchedTitle = titleByName(title);
+    if (!matchedTitle) {
+      element.classList.remove("title-rarity-bg");
+      delete element.dataset.rarity;
+      return;
+    }
+    const rarity = window.CatProfile?.normalizeTitleRarity
+      ? window.CatProfile.normalizeTitleRarity(matchedTitle.rarity, matchedTitle.type)
+      : matchedTitle.rarity ?? (matchedTitle.type === "special" ? 0 : 1);
+    element.dataset.rarity = String(rarity);
+    element.classList.add("title-rarity-bg");
+  }
+
+  function normalizeWinRates(source) {
+    if (!source || typeof source !== "object") return null;
+    const black = Number(source.black);
+    const white = Number(source.white);
+    const draw = Number(source.draw);
+    if (![black, white, draw].every(Number.isFinite)) return null;
+    return { black, white, draw };
   }
 
   function titleForColor(colorKey) {
@@ -120,7 +218,9 @@
   function applyPlayerTitle(elementId, colorKey) {
     const titleEl = document.querySelector(elementId);
     if (!titleEl) return;
-    titleEl.textContent = titleForColor(colorKey);
+    const title = titleForColor(colorKey);
+    titleEl.textContent = title;
+    applyTitleRarityBackground(titleEl, title);
   }
 
   function updatePlayerNames(playerNames = session?.playerNames || {}) {
@@ -202,26 +302,91 @@
     return point > 0 ? `+${point}` : String(point);
   }
 
-  function renderPawPointResult(record) {
-    const panel = document.querySelector("#pawPointResult");
-    if (!panel) return;
-    const pawPoints = window.CatProfile?.calculatePawPoints?.(record);
-    if (!pawPoints || record.matchType !== "random") {
-      panel.hidden = true;
-      panel.replaceChildren();
-      return;
-    }
+  function ensurePawPointDialog() {
+    let dialog = document.querySelector("#pawPointDialog");
+    if (dialog) return dialog;
+    dialog = document.createElement("div");
+    dialog.id = "pawPointDialog";
+    dialog.className = "win-rate-dialog";
+    dialog.hidden = true;
+    dialog.innerHTML = `
+      <section class="win-rate-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="pawPointDialogTitle">
+        <h2 id="pawPointDialogTitle">肉球ポイント</h2>
+        <div class="win-rate-dialog-body" id="pawPointDialogBody"></div>
+        <button id="pawPointDialogClose" class="action secondary" type="button">閉じる</button>
+      </section>
+    `;
+    document.body.appendChild(dialog);
+    dialog.querySelector("#pawPointDialogClose")?.addEventListener("click", hidePawPointDialog);
+    dialog.addEventListener("click", event => {
+      if (event.target === dialog) hidePawPointDialog();
+    });
+    return dialog;
+  }
+
+  function showPawPointDialog(record = latestPawPointRecord) {
+    const pawPoints = record?.pawPoints || window.CatProfile?.calculatePawPoints?.(record);
+    if (!record || !pawPoints || record.matchType !== "random") return;
+    const dialog = ensurePawPointDialog();
+    const body = dialog.querySelector("#pawPointDialogBody");
     const detailItems = pawPoints.breakdown.map(item => {
       const valueText = item.kind === "multiply" ? `×${item.value}` : formatSignedPoint(item.value);
       return `<li><span>${item.label}</span><b>${valueText}</b></li>`;
     }).join("");
     const totalText = formatSignedPoint(pawPoints.total);
-    panel.hidden = false;
-    panel.innerHTML = `
-      <h2>肉球ポイント</h2>
-      <p><strong>${totalText}P</strong> 変動しました。</p>
-      <ul>${detailItems}</ul>
+    body.innerHTML = `
+      <p class="paw-point-total"><strong>${totalText}P</strong> 変動しました。</p>
+      <ul class="paw-point-list">${detailItems}</ul>
     `;
+    dialog.hidden = false;
+    dialog.querySelector("#pawPointDialogClose")?.focus();
+  }
+
+  function hidePawPointDialog() {
+    const dialog = document.querySelector("#pawPointDialog");
+    if (dialog) dialog.hidden = true;
+  }
+
+  function schedulePawPointDialogAfterResult(record) {
+    if (pawPointDialogTimer) window.clearTimeout(pawPointDialogTimer);
+    const startedAt = Date.now();
+    const waitForResult = () => {
+      const result = document.querySelector("#gameResult");
+      const resultVisible = result && !result.hidden && result.textContent.trim();
+      if (resultVisible) {
+        pawPointDialogTimer = window.setTimeout(() => {
+          pawPointDialogTimer = null;
+          showPawPointDialog(record);
+        }, 500);
+        return;
+      }
+      if (Date.now() - startedAt >= 2000) {
+        pawPointDialogTimer = null;
+        showPawPointDialog(record);
+        return;
+      }
+      pawPointDialogTimer = window.setTimeout(waitForResult, 50);
+    };
+    pawPointDialogTimer = window.setTimeout(waitForResult, 0);
+  }
+
+  function renderPawPointResult(record) {
+    const button = document.querySelector("#pawPointResultButton");
+    if (!button) return;
+    const pawPoints = window.CatProfile?.calculatePawPoints?.(record);
+    if (!pawPoints || record.matchType !== "random") {
+      latestPawPointRecord = null;
+      if (pawPointDialogTimer) {
+        window.clearTimeout(pawPointDialogTimer);
+        pawPointDialogTimer = null;
+      }
+      button.hidden = true;
+      return;
+    }
+    latestPawPointRecord = { ...record, pawPoints };
+    button.hidden = false;
+    button.textContent = "肉球ポイントを確認する";
+    schedulePawPointDialogAfterResult(latestPawPointRecord);
   }
 
   async function saveMatchHistory(gameState) {
@@ -229,7 +394,6 @@
     if (!session?.roomCode || !session?.playerId || !session?.playerColor) return;
     const key = `${session.roomCode}:${gameState.version || 0}:${gameState.gameResult?.type || "score"}`;
     if (savedMatchHistoryKey === key) return;
-    savedMatchHistoryKey = key;
 
     const board = decodeNumberGrid(gameState.board || []);
     const counts = countBoardCats(board);
@@ -252,6 +416,10 @@
       result: resultSummary(gameState, counts),
       gameResult: gameState.gameResult || null,
       counts,
+      lastOpenWinRates: normalizeWinRates(gameState.lastOpenWinRates),
+      rules: gameState.rules || latestRoomData?.matchRules || session.matchRules || null,
+      specialUsed: gameState.specialUsed || null,
+      observeUsesLeft: gameState.observeUsesLeft || null,
       version: Number(gameState.version) || 0
     };
     record.pawPoints = window.CatProfile?.calculatePawPoints?.(record) || null;
@@ -263,7 +431,9 @@
       } else {
         saveLocalMatchHistory(record);
       }
-    } catch {
+      savedMatchHistoryKey = key;
+    } catch (error) {
+      console.warn("Match history save failed.", error);
       saveLocalMatchHistory(record);
     }
   }
@@ -329,6 +499,7 @@
   function resign() {
     if (!gameApi || gameApi.getState().gameOver) return;
     hideResignConfirm();
+    clearPersistentSession();
     gameApi.endByResignation?.(playerColorValue());
     updateOnlineActionButtons(gameApi.getState());
   }
@@ -906,7 +1077,8 @@
       observeUsesLeft: state.observeUsesLeft,
       historyLength: Array.isArray(state.positionHistory) ? state.positionHistory.length : 0,
       gameOver: Boolean(state.gameOver),
-      gameResult: state.gameResult || null
+      gameResult: state.gameResult || null,
+      lastOpenWinRates: normalizeWinRates(state.lastOpenWinRates)
     };
   }
 
@@ -923,7 +1095,8 @@
       observeUsesLeft: gameState.observeUsesLeft,
       positionHistory: historyForState(gameState),
       gameOver: Boolean(gameState.gameOver),
-      gameResult: gameState.gameResult || null
+      gameResult: gameState.gameResult || null,
+      lastOpenWinRates: gameState.lastOpenWinRates || null
     };
   }
 
@@ -1030,6 +1203,10 @@
       && expectedLength > 0
       && hasCompleteRemoteHistory(latestRoomData.gameState)
     ) {
+      const localState = gameApi?.getState?.();
+      if (localState?.finalObservationRunning || (localState?.gameOver && localState?.reviewIndex === null)) {
+        return;
+      }
       gameApi?.applyExternalState?.(restoreStateWithTimeoutFallback(latestRoomData.gameState), reviewApplyOptions());
       revealReviewScreen();
       updateClockPanel();
@@ -1405,23 +1582,42 @@
     if (gameState.updatedBy !== session.playerId || gameState.reason === "disconnect") {
       const reason = gameState.reason || "";
       if (reason === "observe-start" || reason === "final-observe-start") {
-        remoteObservationPreviewUntil = Date.now() + 2800;
-        if (reason === "final-observe-start") {
-          gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), reviewApplyOptions({
-            playPlaceSound: true,
-            suppressReview: true
-          }));
+        if (delayedObservationTimer) {
+          clearTimeout(delayedObservationTimer);
+          delayedObservationTimer = null;
         }
+        const now = Date.now();
+        remoteObservationLabelUntil = now + 1100;
+        remoteObservationPreviewUntil = now + 2800;
         gameApi.playExternalObservationAnimation(reason === "final-observe-start" ? "ラスト\nオープン！" : "オープン！");
         return;
       }
       const animateObservation = reason === "observe" || reason === "final-observe";
       const skipObservationAnimation = animateObservation && Date.now() < remoteObservationPreviewUntil;
+      const label = reason === "final-observe" ? "ラスト\nオープン！" : "オープン！";
+      const applyObservationState = () => {
+        delayedObservationTimer = null;
+        if (latestVersion !== version) return;
+        gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), reviewApplyOptions({
+          animateObservation: animateObservation && !skipObservationAnimation,
+          popObservationOnly: animateObservation && skipObservationAnimation,
+          playPlaceSound: reason === "move",
+          label
+        }));
+      };
+      const delay = animateObservation && skipObservationAnimation
+        ? Math.max(0, remoteObservationLabelUntil - Date.now())
+        : 0;
+      if (delay > 0) {
+        if (delayedObservationTimer) clearTimeout(delayedObservationTimer);
+        delayedObservationTimer = setTimeout(applyObservationState, delay + 50);
+        return;
+      }
       gameApi.applyExternalState(restoreStateWithTimeoutFallback(gameState), reviewApplyOptions({
         animateObservation: animateObservation && !skipObservationAnimation,
         popObservationOnly: animateObservation && skipObservationAnimation,
         playPlaceSound: reason === "move",
-        label: reason === "final-observe" ? "ラスト\nオープン！" : "オープン！"
+        label
       }));
     }
   }
@@ -1445,6 +1641,7 @@
     }
     try {
       const profile = await window.CatProfile.loadProfile();
+      titleCatalog = window.CatProfile.loadTitleCatalog ? await window.CatProfile.loadTitleCatalog() : [];
       if (!auth.currentUser || auth.currentUser.uid !== session.playerId || profile?.playerId !== session.playerId) {
         setStatus("オンライン認証を確認できませんでした。ロビーから入り直してください。", true);
         return false;
@@ -1480,6 +1677,7 @@
   };
 
   if (resignButton) resignButton.addEventListener("click", showResignConfirm);
+  if (pawPointResultButton) pawPointResultButton.addEventListener("click", () => showPawPointDialog());
   if (confirmResignButton) confirmResignButton.addEventListener("click", resign);
   if (cancelResignButton) cancelResignButton.addEventListener("click", hideResignConfirm);
   if (resignConfirm) {
@@ -1488,7 +1686,10 @@
     });
   }
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape") hideResignConfirm();
+    if (event.key === "Escape") {
+      hideResignConfirm();
+      hidePawPointDialog();
+    }
   });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) refreshPresenceNow();
@@ -1499,6 +1700,7 @@
     backToRoomButton.textContent = "マイページに戻る";
   }
   if (backToRoomButton) backToRoomButton.addEventListener("click", navigateToRoomScreen);
+  arrangeClockItems();
 
   document.addEventListener("quantum-othello:ready", async event => {
     gameApi = event.detail;

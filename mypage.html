@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>はこ×ねこリバーシ - マイページ</title>
-  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+  <link rel="stylesheet" href="style.css?v=20260901-title-toggle-close-1">
 </head>
 <body>
 <main class="mypage-screen">
@@ -12,7 +12,12 @@
   <p class="sub">名前や称号、これまでのオンライン対局を確認できます。</p>
 
   <section class="mypage-panel" aria-label="マイデータ">
-    <h2 class="panel-title">マイデータ</h2>
+    <div class="mypage-field">
+      <span>称号</span>
+      <strong id="currentTitleDisplay" class="current-title-display">新米ねこ</strong>
+    </div>
+    <button id="openTitleList" class="action" type="button">称号一覧</button>
+
     <label class="mypage-field">
       <span>ニックネーム</span>
       <input id="profileName" type="text" maxlength="12" placeholder="ねこさん" autocomplete="nickname">
@@ -20,51 +25,8 @@
     <button id="saveProfileName" class="action" type="button">名前を保存</button>
     <p id="profileNameStatus" class="mypage-status" aria-live="polite"></p>
 
-    <label class="mypage-field">
-      <span>称号</span>
-      <select id="profileTitle">
-        <option value="新米ねこ">新米ねこ</option>
-        <option value="アマチュアねこ">アマチュアねこ</option>
-        <option value="ボスねこ">ボスねこ</option>
-      </select>
-    </label>
-    <button id="saveProfileTitle" class="action" type="button">称号を保存</button>
-    <p id="profileTitleStatus" class="mypage-status" aria-live="polite"></p>
-
-    <div class="mypage-data-grid" aria-label="プレイヤーデータ">
-      <div class="mypage-data-card">
-        <span>ログイン日数</span>
-        <strong id="loginDaysValue">--日</strong>
-      </div>
-      <div class="mypage-data-card">
-        <span>連続ログイン</span>
-        <strong id="currentLoginStreakValue">--日</strong>
-      </div>
-      <div class="mypage-data-card">
-        <span>最長連続ログイン</span>
-        <strong id="longestLoginStreakValue">--日</strong>
-      </div>
-      <div class="mypage-data-card">
-        <span>肉球ポイント</span>
-        <strong id="pawPointsValue">--</strong>
-      </div>
-      <div class="mypage-data-card">
-        <span>ランダム戦 対局数</span>
-        <strong id="randomGamesValue">--局</strong>
-      </div>
-      <div class="mypage-data-card win">
-        <span>勝利</span>
-        <strong id="randomWinsValue">--</strong>
-      </div>
-      <div class="mypage-data-card loss">
-        <span>敗北</span>
-        <strong id="randomLossesValue">--</strong>
-      </div>
-      <div class="mypage-data-card draw">
-        <span>引き分け</span>
-        <strong id="randomDrawsValue">--</strong>
-      </div>
-    </div>
+    <span class="mypage-section-label">マイデータ</span>
+    <button id="openMyData" class="action" type="button">マイデータ</button>
   </section>
 
   <section class="mypage-panel" aria-label="棋譜の確認">
@@ -82,12 +44,12 @@
   </div>
 </main>
 
-<script src="js/audio.js?v=20260726-webaudio-1"></script>
+<script src="js/audio.js?v=20260829-file-audio-fallback-1"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore-compat.js"></script>
 <script src="js/firebase-config.js?v=20260715-1"></script>
-<script src="js/profile.js?v=20260819-paw-points-2"></script>
-<script src="js/mypage.js?v=20260819-paw-points-2"></script>
+<script src="js/profile.js?v=20260831-title-comment-1"></script>
+<script src="js/mypage.js?v=20260830-mydata-page-1"></script>
 </body>
 </html>

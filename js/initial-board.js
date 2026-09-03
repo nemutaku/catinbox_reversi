@@ -8,6 +8,12 @@
   const saveButton = document.querySelector("#initialSave");
   const audio = window.OthelloAudio?.createMatchAudioController?.();
   const initialPieceTypes = new Set(["cat", "box", "special0", "special100"]);
+  const onlineDraftKey = "catinboxCustomMatchDraft";
+  const aiDraftKey = "catinboxAiCustomMatchDraft";
+  const localDraftKey = "catinboxLocalCustomMatchDraft";
+  const defaultRules = {
+    specialProbabilities: { 0: 0, 100: 100 }
+  };
   const returnPathByFrom = {
     friend: "online.html?mode=friend",
     ai: "ai-setup.html",
@@ -48,6 +54,43 @@
     const number = Number(value);
     if (!Number.isFinite(number)) return fallback;
     return Math.min(max, Math.max(min, Math.round(number)));
+  }
+
+  function readJson(storage, key) {
+    try {
+      return JSON.parse(storage.getItem(key) || "null");
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeRules(source = {}) {
+    if (window.OthelloCustomSettings?.normalizeRules) {
+      return window.OthelloCustomSettings.normalizeRules(source);
+    }
+    const specialProbabilities = source.specialProbabilities || {};
+    return {
+      specialProbabilities: {
+        0: clampInteger(specialProbabilities[0] ?? specialProbabilities["0"] ?? source.special0Probability, 0, 100, 0),
+        100: clampInteger(specialProbabilities[100] ?? specialProbabilities["100"] ?? source.special100Probability, 0, 100, 100)
+      }
+    };
+  }
+
+  function currentMatchRules() {
+    if (returnPath === "online.html?mode=friend") {
+      const draft = readJson(sessionStorage, onlineDraftKey);
+      return normalizeRules(draft?.rules || defaultRules);
+    }
+    if (returnPath === "ai-setup.html") {
+      const draft = readJson(localStorage, aiDraftKey);
+      return normalizeRules(draft?.rules || defaultRules);
+    }
+    if (returnPath === "local-custom.html") {
+      const draft = readJson(localStorage, localDraftKey);
+      return normalizeRules(draft?.rules || defaultRules);
+    }
+    return normalizeRules(defaultRules);
   }
 
   function normalizeSetup(source = {}) {
@@ -99,19 +142,12 @@
     }
   }
 
-  function pieceImage(piece) {
-    if (!piece) return "";
-    const prefix = piece.color === "white" ? "white" : "black";
-    return piece.type === "cat"
-      ? `assets/images/${prefix}cat_normal.png`
-      : `assets/images/${prefix}box_normal.png`;
-  }
-
   function pieceLabel(piece) {
     if (!piece) return "";
     if (piece.type === "cat") return "ねこ";
-    if (piece.type === "special0") return "0%";
-    if (piece.type === "special100") return "100%";
+    const rules = currentMatchRules();
+    if (piece.type === "special0") return `${rules.specialProbabilities[0]}%`;
+    if (piece.type === "special100") return `${rules.specialProbabilities[100]}%`;
     return "通常";
   }
 
@@ -123,19 +159,23 @@
         const piece = cells[r]?.[c];
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "initial-board-cell";
+        button.className = "cell initial-board-cell";
         button.dataset.row = String(r);
         button.dataset.col = String(c);
         button.setAttribute("role", "gridcell");
         button.setAttribute("aria-label", `${String.fromCharCode(65 + c)}${r + 1}`);
         if (piece) {
-          button.classList.add(piece.color, piece.type);
-          const img = document.createElement("img");
-          img.src = pieceImage(piece);
-          img.alt = "";
-          const label = document.createElement("span");
-          label.textContent = pieceLabel(piece);
-          button.append(img, label);
+          const disc = document.createElement("span");
+          disc.className = `disc ${piece.color === "white" ? "white" : "black"}`;
+          if (piece.type === "cat") {
+            disc.classList.add("observed");
+          }
+          const label = pieceLabel(piece);
+          if (piece.type === "special0" || piece.type === "special100") {
+            disc.dataset.probLabel = label.replace("%", "");
+            disc.dataset.probTone = Number(label.replace("%", "")) >= 50 ? "warm" : "cool";
+          }
+          button.append(disc);
         }
         boardEl.append(button);
       }

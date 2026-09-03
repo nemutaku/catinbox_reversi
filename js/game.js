@@ -97,7 +97,7 @@
   }
   normalizeActionLayout();
 
-  let board, probBoard, probLabelBoard, observedBoard, turn, lastMove = null, undoStack = [], positionHistory = [], reviewIndex = null, gameOver = false, finalObservationRunning = false, gameResult = null;
+  let board, probBoard, probLabelBoard, observedBoard, turn, lastMove = null, undoStack = [], positionHistory = [], reviewIndex = null, gameOver = false, finalObservationRunning = false, gameResult = null, lastOpenWinRates = null;
   let selectedSpecial = null;
   let specialUsed;
   let faceToFace = false;
@@ -180,6 +180,15 @@ function applyInitialSetup() {
   };
   const colorName = color => color === B ? 'black' : 'white';
   const observationPopImage = event => `assets/images/cat_pop_${colorName(event.beforeColor)}box_${colorName(event.afterColor)}cat.png`;
+  function preloadObservationPopImages() {
+    ['black', 'white'].forEach(beforeColor => {
+      ['black', 'white'].forEach(afterColor => {
+        const image = new Image();
+        image.src = `assets/images/cat_pop_${beforeColor}box_${afterColor}cat.png`;
+      });
+    });
+  }
+  preloadObservationPopImages();
   function ensureResultElement() {
     if (elements.result) return elements.result;
     const score = elements.blackScore?.closest('.score');
@@ -191,6 +200,173 @@ function applyInitialSetup() {
     score.insertAdjacentElement('beforebegin', result);
     elements.result = result;
     return result;
+  }
+
+  function ensureWinRateDialog() {
+    let dialog = document.querySelector('#lastOpenWinRateDialog');
+    if (dialog) return dialog;
+    dialog = document.createElement('div');
+    dialog.id = 'lastOpenWinRateDialog';
+    dialog.className = 'win-rate-dialog';
+    dialog.hidden = true;
+    dialog.innerHTML = `
+      <section class="win-rate-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="lastOpenWinRateTitle">
+        <h2 id="lastOpenWinRateTitle">ラストオープン前の勝率</h2>
+        <div class="win-rate-dialog-body" id="lastOpenWinRateBody"></div>
+        <button id="lastOpenWinRateClose" class="action" type="button">閉じる</button>
+      </section>
+    `;
+    document.body.appendChild(dialog);
+    const closeButton = dialog.querySelector('#lastOpenWinRateClose');
+    closeButton?.addEventListener('click', hideLastOpenWinRateDialog);
+    dialog.addEventListener('click', event => {
+      if (event.target === dialog) hideLastOpenWinRateDialog();
+    });
+    return dialog;
+  }
+
+  function ensureWinRateButton() {
+    let button = document.querySelector('#lastOpenWinRateButton');
+    if (button) return button;
+    const result = ensureResultElement();
+    if (!result) return null;
+    button = document.createElement('button');
+    button.id = 'lastOpenWinRateButton';
+    button.className = 'action secondary win-rate-button';
+    button.type = 'button';
+    button.textContent = 'ラストオープン前の勝率を確認する';
+    button.hidden = true;
+    button.addEventListener('click', showLastOpenWinRateDialog);
+    result.insertAdjacentElement('afterend', button);
+    return button;
+  }
+
+  function normalizeWinRates(value) {
+    if (!value || typeof value !== 'object') return null;
+    const black = Number(value.black);
+    const white = Number(value.white);
+    const draw = Number(value.draw);
+    if (![black, white, draw].every(Number.isFinite)) return null;
+    return {
+      black: Math.min(100, Math.max(0, black)),
+      white: Math.min(100, Math.max(0, white)),
+      draw: Math.min(100, Math.max(0, draw)),
+      occupied: Number.isFinite(Number(value.occupied)) ? Number(value.occupied) : 0
+    };
+  }
+
+  function probabilityToBlack(cell, probability, observed) {
+    if (observed) return cell === B ? 1 : 0;
+    const sameColorRate = Math.min(100, Math.max(0, Number(probability))) / 100;
+    return cell === B ? sameColorRate : 1 - sameColorRate;
+  }
+
+  function calculateLastOpenWinRates(targetBoard = board, targetProbBoard = probBoard, targetObservedBoard = observedBoard) {
+    const blackProbabilities = [];
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const cell = targetBoard?.[r]?.[c];
+      if (cell === E || cell === undefined) continue;
+      blackProbabilities.push(probabilityToBlack(cell, targetProbBoard?.[r]?.[c], Boolean(targetObservedBoard?.[r]?.[c])));
+    }
+    const occupied = blackProbabilities.length;
+    if (!occupied) return { black: 0, white: 0, draw: 100, occupied: 0 };
+    let dp = [1];
+    for (const p of blackProbabilities) {
+      const next = Array(dp.length + 1).fill(0);
+      for (let k = 0; k < dp.length; k++) {
+        next[k] += dp[k] * (1 - p);
+        next[k + 1] += dp[k] * p;
+      }
+      dp = next;
+    }
+    let black = 0;
+    let white = 0;
+    let draw = 0;
+    const half = occupied / 2;
+    dp.forEach((chance, blackCount) => {
+      if (blackCount > half) black += chance;
+      else if (blackCount < half) white += chance;
+      else draw += chance;
+    });
+    return {
+      black: black * 100,
+      white: white * 100,
+      draw: draw * 100,
+      occupied
+    };
+  }
+
+  function formatWinRate(value) {
+    const percent = Math.min(100, Math.max(0, Number(value) || 0));
+    if (percent <= 0) return '0%';
+    if (percent >= 100) return '100%';
+    if (percent >= 99.9) return '99.9%以上';
+    if (percent <= 0.1) return '0.1%以下';
+    return `${(Math.round(percent * 10) / 10).toFixed(1)}%`;
+  }
+
+  function roundedWinRateLabels(rates) {
+    const roundedDisplay = value => {
+      const percent = Math.min(100, Math.max(0, Number(value) || 0));
+      return {
+        value: Math.round(percent * 10) / 10,
+        label: formatWinRate(percent)
+      };
+    };
+    const black = roundedDisplay(rates.black);
+    const white = roundedDisplay(rates.white);
+    const drawPercent = Math.min(100, Math.max(0, Number(rates.draw) || 0));
+    const canDraw = Number(rates.occupied) % 2 === 0;
+    if (canDraw && drawPercent > 0 && drawPercent <= 0.1 && black.value + white.value >= 100) {
+      return {
+        black: black.label,
+        white: white.label,
+        draw: '0.1%以下'
+      };
+    }
+    const rawDraw = Math.max(0, Math.min(100, 100 - black.value - white.value));
+    const draw = {
+      value: Math.round(rawDraw * 10) / 10,
+      label: formatWinRate(rawDraw)
+    };
+    if (draw.value !== rawDraw && rawDraw > 0.1 && rawDraw < 99.9) {
+      return {
+        black: black.label,
+        white: white.label,
+        draw: `${draw.value.toFixed(1)}%`
+      };
+    }
+    return {
+      black: black.label,
+      white: white.label,
+      draw: draw.label
+    };
+  }
+
+  function showLastOpenWinRateDialog() {
+    const rates = normalizeWinRates(lastOpenWinRates);
+    if (!rates) return;
+    const dialog = ensureWinRateDialog();
+    const body = dialog.querySelector('#lastOpenWinRateBody');
+    if (body) {
+      const labels = roundedWinRateLabels(rates);
+      body.innerHTML = `
+        <p>ラストオープン前のはこが開いた場合の勝率です。</p>
+        <dl class="win-rate-list">
+          <div><dt>黒の勝ち</dt><dd>${labels.black}</dd></div>
+          <div><dt>白の勝ち</dt><dd>${labels.white}</dd></div>
+          <div><dt>引き分け</dt><dd>${labels.draw}</dd></div>
+        </dl>
+      `;
+    }
+    dialog.hidden = false;
+    dialog.querySelector('#lastOpenWinRateClose')?.focus();
+  }
+
+  function hideLastOpenWinRateDialog() {
+    const dialog = document.querySelector('#lastOpenWinRateDialog');
+    if (dialog) dialog.hidden = true;
+    document.querySelector('#lastOpenWinRateButton')?.focus();
   }
 
   function buildGameResultText() {
@@ -218,6 +394,8 @@ function applyInitialSetup() {
     const text = buildGameResultText();
     result.textContent = text;
     result.hidden = !text;
+    const winRateButton = ensureWinRateButton();
+    if (winRateButton) winRateButton.hidden = !text || finalObservationRunning || !normalizeWinRates(lastOpenWinRates);
   }
   let applyingRemoteState = false;
 
@@ -236,6 +414,7 @@ function applyInitialSetup() {
       reviewIndex,
       gameOver,
       gameResult,
+      lastOpenWinRates,
       selectedSpecial,
       specialUsed,
       faceToFace,
@@ -266,6 +445,7 @@ function applyInitialSetup() {
     positionHistory = state.positionHistory;
     gameOver = state.gameOver;
     gameResult = state.gameResult || null;
+    lastOpenWinRates = normalizeWinRates(state.lastOpenWinRates);
     reviewIndex = gameOver ? state.reviewIndex : null;
     selectedSpecial = state.selectedSpecial;
     specialUsed = state.specialUsed;
@@ -455,6 +635,7 @@ function applyInitialSetup() {
     if (!hasOpenableBox()) {
       gameOver = true;
       finalObservationRunning = false;
+      lastOpenWinRates = null;
       reviewIndex = positionHistory.length ? positionHistory.length - 1 : null;
       const black = count(B), white = count(W);
       const result = black === white ? '引き分けです。' : black > white ? `黒の勝ち。${black} 対 ${white}` : `白の勝ち。${black} 対 ${white}`;
@@ -465,6 +646,7 @@ function applyInitialSetup() {
     }
     gameOver = true;
     finalObservationRunning = true;
+    lastOpenWinRates = calculateLastOpenWinRates();
     reviewIndex = null;
     notifyStateChange('final-observe-start');
     status('最後のオープン中です。');
@@ -485,6 +667,7 @@ function applyInitialSetup() {
     const winner = -safeLoser;
     gameOver = true;
     gameResult = { type: 'resign', loser: safeLoser, winner };
+    lastOpenWinRates = null;
     finalObservationRunning = false;
     observingShaking = false;
     observationPops = {};
@@ -536,13 +719,19 @@ function applyInitialSetup() {
     lastMove = { r: m.r, c: m.c };
     turn = -turn;
     positionHistory.push(snapshot());
+    const terminalAfterMove = !moves(board, turn).length && !moves(board, -turn).length;
+    if (terminalAfterMove) notifyStateChange('move');
     advance();
     if (!finalObservationRunning) render();
-    if (!gameOver || !finalObservationRunning) notifyStateChange('move');
+    if (!terminalAfterMove && (!gameOver || !finalObservationRunning)) notifyStateChange('move');
   }
 
   function applyObservationRoll() {
     return rules.applyObservationRoll(board, probBoard, observedBoard);
+  }
+
+  function hasNewObservationPop(result) {
+    return (result.events || []).some(event => !event.wasObserved);
   }
 
   function runObservationSequence(label, afterRoll) {
@@ -563,7 +752,7 @@ function applyInitialSetup() {
           .filter(event => !event.wasObserved)
           .map(event => [`${event.r},${event.c}`, observationPopImage(event)])
       );
-      if (result.colorChanged > 0 || result.probabilityChanged) audio.playSound(sounds.observeChange, 0.8);
+      if (hasNewObservationPop(result)) audio.playSound(sounds.observeChange, 0.8);
       render();
       afterRoll(result.colorChanged);
       finalObservationRunning = true;
@@ -624,6 +813,7 @@ function applyInitialSetup() {
     applyingRemoteState = true;
     gameOver = false;
     gameResult = null;
+    lastOpenWinRates = null;
     reviewIndex = null;
     finalObservationRunning = true;
     observingShaking = true;
@@ -658,7 +848,7 @@ function applyInitialSetup() {
     const nextBoard = copy(state.board);
     const nextObservedBoard = normalizeObservedBoard(state.observedBoard);
     applyingRemoteState = true;
-    applyExternalState(state, { skipRender: true });
+    applyExternalState(state, { skipRender: true, suppressReview: true });
     finalObservationRunning = true;
     reviewIndex = null;
     observationPops = observationPopImagesBetween(beforeBoard, beforeObserved, nextBoard, nextObservedBoard);
@@ -713,6 +903,7 @@ function applyInitialSetup() {
     observeUsesLeft = state.observeUsesLeft;
     gameOver = false;
     gameResult = null;
+    lastOpenWinRates = null;
     finalObservationRunning = false;
     observingShaking = false;
     observationPops = {};
@@ -794,6 +985,7 @@ function applyInitialSetup() {
     })) : [snapshot()];
     gameOver = Boolean(state.gameOver);
     gameResult = state.gameResult || null;
+    lastOpenWinRates = normalizeWinRates(state.lastOpenWinRates);
     if (gameOver && !options.suppressReview) {
       const requestedReviewIndex = Number.isInteger(options.initialReviewIndex)
         ? options.initialReviewIndex
@@ -825,6 +1017,8 @@ function applyInitialSetup() {
       isAiTurn: isAiTurn(),
       gameOver,
       gameResult,
+      finalObservationRunning,
+      lastOpenWinRates,
       legalMoves,
       selectedSpecial,
       specialUsed: copySpecialUsed(),
@@ -909,6 +1103,9 @@ function applyInitialSetup() {
   };
   document.addEventListener('click', (event) => {
     if (event.target.closest('button.action')) audio.playSound(sounds.uiClick, 0.55);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') hideLastOpenWinRateDialog();
   });
   window.addEventListener('storage', audio.syncBgmSettings);
   reviewControls.start.onclick = () => { if (gameOver) { reviewIndex = 0; render(); } };

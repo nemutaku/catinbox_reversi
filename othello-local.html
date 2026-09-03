@@ -10,18 +10,18 @@
       sessionStorage.removeItem('othelloPageTransition');
     }
   </script>
-  <link rel="stylesheet" href="style.css?v=20260819-cache-review-1">
+  <link rel="stylesheet" href="style.css?v=20260901-title-toggle-close-1">
 </head>
 <body>
-<main id="gameScreen">
+<main id="gameScreen" class="local-game-screen">
   <div class="layout"><div class="board-column"><div class="score"><div class="count cat-score black-score"><span class="score-icons" aria-hidden="true"><img src="assets/images/blackcat_normal.png" alt=""><img src="assets/images/blackbox_normal.png" alt=""></span><b id="blackScore">2</b></div><div class="count cat-score white-score"><span class="score-icons" aria-hidden="true"><img src="assets/images/whitecat_normal.png" alt=""><img src="assets/images/whitebox_normal.png" alt=""></span><b id="whiteScore">2</b></div></div><section class="board-wrap" aria-label="オセロ盤"><div class="coord-top" aria-hidden="true"><span></span><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div><div class="board-row"><div class="coord-left" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div><div id="board" role="grid" aria-label="オセロ盤"></div></div></section><div class="special-actions" aria-label="特殊はこ"><button id="special100" class="action secondary" type="button">100%はこ</button><button id="special0" class="action secondary" type="button">0%はこ</button></div><div class="observe-actions"><button id="observe" class="action secondary" type="button">オープン！(あと2回)</button></div></div><aside>
     <button id="faceToFace" class="action secondary face-toggle" type="button" aria-pressed="false">向かい合ってプレイ: OFF</button><button id="optionsButton" class="action secondary" type="button">オプション</button><div class="board-actions"><button id="undo" class="action secondary" disabled>待った</button><button id="newGame" class="action">新規対局</button></div><button id="modeSelectButton" class="action secondary" type="button">対局選択へ戻る</button>
   </aside></div>
 
 </main>
 <script src="js/othello-rules.js"></script>
-<script src="js/audio.js?v=20260726-webaudio-1"></script>
-<script src="js/game-storage.js?v=20260802-prob-label-2"></script>
+<script src="js/audio.js?v=20260829-file-audio-fallback-1"></script>
+<script src="js/game-storage.js?v=20260822-last-open-rates-1"></script>
 <script src="js/game-view.js?v=20260802-prob-label-2"></script>
 <script src="js/custom-match-settings.js?v=20260819-cache-review-1"></script>
 <script>
@@ -29,7 +29,7 @@
     rules: window.OthelloCustomSettings?.loadRules?.('local') || null
   };
 </script>
-<script src="js/game.js?v=20260816-local-select-2"></script>
+<script src="js/game.js?v=20260822-last-open-meow-1"></script>
 </body>
 </html>
 

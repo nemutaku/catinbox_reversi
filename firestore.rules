@@ -6,6 +6,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
     function isPlayerId(playerId) {
       return signedIn() && request.auth.uid == playerId;
     }
@@ -122,27 +127,46 @@ service cloud.firestore {
         );
     }
 
+    match /admins/{adminId} {
+      allow read: if isPlayerId(adminId);
+      allow create, update, delete: if false;
+    }
+
     match /rooms/{roomId} {
       allow read: if signedIn();
       allow create: if isCreatingOwnRoom();
-      allow update: if isValidRoomJoinUpdate() || isValidRoomPlayUpdate();
-      allow delete: if isRoomHost() && roomData().status == "waiting";
+      allow update: if isAdmin() || isValidRoomJoinUpdate() || isValidRoomPlayUpdate();
+      allow delete: if isAdmin() || (isRoomHost() && roomData().status == "waiting");
 
       match /moves/{moveId} {
         allow read: if signedIn();
-        allow create, update: if isParentRoomPlayer(roomId);
+        allow create, update: if isAdmin() || isParentRoomPlayer(roomId);
         allow delete: if false;
       }
     }
 
     match /players/{playerId} {
-      allow read, create, update: if isPlayerId(playerId);
+      allow read: if isAdmin() || isPlayerId(playerId);
+      allow create, update: if isPlayerId(playerId);
       allow delete: if false;
 
       match /matches/{matchId} {
-        allow read, create, update: if isPlayerId(playerId);
+        allow read: if isAdmin() || isPlayerId(playerId);
+        allow create, update: if isPlayerId(playerId);
         allow delete: if false;
       }
+    }
+
+    match /title_normal/{titleId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /title_special/{titleId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
   }
 }

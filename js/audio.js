@@ -14,6 +14,10 @@
   const bufferCache = new Map();
   let audioContext = null;
 
+  function isLocalFilePage() {
+    return window.location.protocol === 'file:';
+  }
+
   function clamp(value, fallback = 0) {
     const number = Number(value);
     if (!Number.isFinite(number)) return fallback;
@@ -99,6 +103,10 @@
   function playBufferedSound(src, volume = 0.7) {
     const settings = getAudioSettings();
     if (!settings.seEnabled) return;
+    if (isLocalFilePage()) {
+      playPlainElementSound(src, volume, settings);
+      return;
+    }
     loadAudioBuffer(src)
       .then(buffer => {
         const context = getAudioContext();
@@ -112,6 +120,13 @@
         source.start(0);
       })
       .catch(() => playElementSound(src, volume, settings));
+  }
+
+  function playPlainElementSound(src, volume = 0.7, settings = getAudioSettings()) {
+    const element = new Audio(src);
+    element.preload = 'auto';
+    element.volume = Math.min(1, volumeWithGain(settings.seVolume, volume * seGain));
+    element.play().catch(() => {});
   }
 
   function playElementSound(src, volume = 0.7, settings = getAudioSettings()) {
@@ -146,6 +161,7 @@
     let mutedByGain = false;
 
     function connect() {
+      if (isLocalFilePage()) return null;
       const context = getAudioContext();
       if (!context) return null;
       if (!sourceNode) {
@@ -159,13 +175,17 @@
 
     function applyVolume(settings = getAudioSettings()) {
       connect();
-      if (!gainNode) return;
+      if (!gainNode) {
+        element.volume = mutedByGain ? 0 : Math.min(1, volumeWithGain(settings.bgmVolume, bgmGain));
+        return;
+      }
       gainNode.gain.value = mutedByGain ? 0 : Math.min(1, volumeWithGain(settings.bgmVolume, bgmGain));
     }
 
     function play() {
       connect();
       applyVolume();
+      if (isLocalFilePage()) return element.play();
       return resumeAudioContext().then(() => element.play());
     }
 

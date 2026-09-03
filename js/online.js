@@ -25,6 +25,7 @@
   const customSpecial100ProbabilityEl = document.querySelector("#customSpecial100Probability");
   const customSpecial100UsesEl = document.querySelector("#customSpecial100Uses");
   const customObserveUsesEl = document.querySelector("#customObserveUses");
+  const customMatchTimeSecondsEl = document.querySelector("#customMatchTimeSeconds");
   const customInitialSetupButton = document.querySelector("#customInitialSetupButton");
   const customInitialColorEl = document.querySelector("#customInitialColor");
   const customInitialPieceEl = document.querySelector("#customInitialPiece");
@@ -39,7 +40,6 @@
   const customMatchDraftKey = "catinboxCustomMatchDraft";
   const customInitialSetupKey = "catinboxCustomInitialSetup";
   const audio = window.OthelloAudio?.createMatchAudioController?.();
-  const allowedTitles = new Set(["新米ねこ", "アマチュアねこ", "ボスねこ"]);
   const query = new URLSearchParams(location.search);
   const matchMode = query.get("mode") === "random" ? "random" : "friend";
   const customMatchDefaults = {
@@ -49,7 +49,8 @@
     special0Uses: 2,
     special100Probability: 100,
     special100Uses: 2,
-    observeUseLimit: 2
+    observeUseLimit: 2,
+    matchTimeSeconds: 300
   };
   const initialPieceTypes = new Set(["cat", "box", "special0", "special100"]);
 
@@ -62,7 +63,9 @@
   let activePlayerId = null;
   let ownedWaitingRoomCode = "";
   let currentProfile = null;
+  let titleCatalog = [];
   let randomMatchStarted = false;
+  let resumeValidationToken = 0;
   let customInitialCells = createDefaultInitialCells();
 
   function setStatus(message, isError = false) {
@@ -129,14 +132,51 @@
   }
 
   function clearPersistentSession() {
+    resumeValidationToken += 1;
     localStorage.removeItem(persistentSessionKey);
     updateResumeButton();
   }
 
   function updateResumeButton() {
     if (!resumeRoomButton) return;
+    if (matchMode === "random" || randomMatchStarted || navigatedToGame || (matchPreviewEl && !matchPreviewEl.hidden)) {
+      resumeRoomButton.hidden = true;
+      return;
+    }
     const saved = readPersistentSession();
-    resumeRoomButton.hidden = !saved?.roomCode || !saved?.playerId || !saved?.playerColor;
+    resumeRoomButton.hidden = true;
+    if (!saved?.roomCode || !saved?.playerId || !saved?.playerColor) return;
+    if (!canUseOnline()) return;
+    validateResumeButtonSession(saved);
+  }
+
+  async function validateResumeButtonSession(saved) {
+    const token = ++resumeValidationToken;
+    resumeRoomButton.disabled = true;
+    try {
+      const snapshot = await db.collection("rooms").doc(saved.roomCode).get();
+      if (token !== resumeValidationToken) return;
+      if (!snapshot.exists) {
+        clearPersistentSession();
+        return;
+      }
+      const room = snapshot.data();
+      const players = room.players || {};
+      const currentPlayerId = currentProfile?.playerId || activePlayerId;
+      const isParticipant = players.black === saved.playerId || players.white === saved.playerId;
+      const isCurrentPlayer = !currentPlayerId || saved.playerId === currentPlayerId;
+      if (!isParticipant || !isCurrentPlayer || isFinishedRoom(room)) {
+        clearPersistentSession();
+        return;
+      }
+      resumeRoomButton.hidden = false;
+      resumeRoomButton.disabled = false;
+    } catch {
+      if (token === resumeValidationToken) {
+        resumeRoomButton.hidden = true;
+        resumeRoomButton.disabled = false;
+      }
+    }
   }
 
   function userError(message) {
@@ -164,8 +204,27 @@
   }
 
   function getPlayerTitle() {
-    const title = localStorage.getItem(titleKey);
-    return allowedTitles.has(title) ? title : "新米ねこ";
+    return String(localStorage.getItem(titleKey) || "新米ねこ").trim().slice(0, 16) || "新米ねこ";
+  }
+
+  function titleByName(title) {
+    const normalized = String(title || "").trim();
+    return titleCatalog.find(item => item.name === normalized) || null;
+  }
+
+  function applyTitleRarityBackground(element, title) {
+    if (!element) return;
+    const matchedTitle = titleByName(title);
+    const rarity = window.CatProfile?.normalizeTitleRarity
+      ? window.CatProfile.normalizeTitleRarity(matchedTitle?.rarity, matchedTitle?.type)
+      : matchedTitle?.rarity ?? (matchedTitle?.type === "special" ? 0 : 1);
+    if (!matchedTitle) {
+      element.classList.remove("title-rarity-bg");
+      delete element.dataset.rarity;
+      return;
+    }
+    element.dataset.rarity = String(rarity);
+    element.classList.add("title-rarity-bg");
   }
 
   function setNicknameValueFromStorage() {
@@ -344,6 +403,12 @@
         100: clampInteger(specialUseLimits[100] ?? specialUseLimits["100"] ?? source.special100Uses, 0, 50, customMatchDefaults.special100Uses)
       },
       observeUseLimit: clampInteger(source.observeUseLimit ?? source.observeUses, 0, 50, customMatchDefaults.observeUseLimit),
+      matchTimeMs: clampInteger(
+        source.matchTimeMs ?? Number(source.matchTimeSeconds) * 1000,
+        30 * 1000,
+        20 * 60 * 1000,
+        customMatchDefaults.matchTimeSeconds * 1000
+      ),
       initialSetup: source.initialSetup ? normalizeInitialSetup(source.initialSetup) : null
     };
   }
@@ -356,6 +421,7 @@
     if (customSpecial100ProbabilityEl) customSpecial100ProbabilityEl.value = String(customMatchDefaults.special100Probability);
     if (customSpecial100UsesEl) customSpecial100UsesEl.value = String(customMatchDefaults.special100Uses);
     if (customObserveUsesEl) customObserveUsesEl.value = String(customMatchDefaults.observeUseLimit);
+    if (customMatchTimeSecondsEl) customMatchTimeSecondsEl.value = String(customMatchDefaults.matchTimeSeconds);
     customInitialCells = createDefaultInitialCells();
     renderCustomInitialBoard();
     if (persistInitialSetup) saveCustomInitialSetup();
@@ -373,6 +439,7 @@
     clampCustomNumberInput(customSpecial100ProbabilityEl, 0, 100, customMatchDefaults.special100Probability);
     clampCustomNumberInput(customSpecial100UsesEl, 0, 50, customMatchDefaults.special100Uses);
     clampCustomNumberInput(customObserveUsesEl, 0, 50, customMatchDefaults.observeUseLimit);
+    clampCustomNumberInput(customMatchTimeSecondsEl, 30, 20 * 60, customMatchDefaults.matchTimeSeconds);
   }
 
   function saveCustomMatchDraft() {
@@ -391,6 +458,7 @@
           100: customSpecial100UsesEl?.value
         },
         observeUseLimit: customObserveUsesEl?.value,
+        matchTimeMs: Number(customMatchTimeSecondsEl?.value || customMatchDefaults.matchTimeSeconds) * 1000,
         initialSetup: collectInitialSetup()
       }
     });
@@ -415,6 +483,7 @@
     if (customSpecial100ProbabilityEl) customSpecial100ProbabilityEl.value = String(rules.specialProbabilities[100]);
     if (customSpecial100UsesEl) customSpecial100UsesEl.value = String(rules.specialUseLimits[100]);
     if (customObserveUsesEl) customObserveUsesEl.value = String(rules.observeUseLimit);
+    if (customMatchTimeSecondsEl) customMatchTimeSecondsEl.value = String(Math.round((rules.matchTimeMs || customMatchDefaults.matchTimeSeconds * 1000) / 1000));
     if (!hasSavedInitialSetup && rules.initialSetup) {
       customInitialCells = initialSetupToCells(rules.initialSetup);
       renderCustomInitialBoard();
@@ -429,7 +498,8 @@
       [customSpecial0UsesEl, 0, 50, customMatchDefaults.special0Uses],
       [customSpecial100ProbabilityEl, 0, 100, customMatchDefaults.special100Probability],
       [customSpecial100UsesEl, 0, 50, customMatchDefaults.special100Uses],
-      [customObserveUsesEl, 0, 50, customMatchDefaults.observeUseLimit]
+      [customObserveUsesEl, 0, 50, customMatchDefaults.observeUseLimit],
+      [customMatchTimeSecondsEl, 30, 20 * 60, customMatchDefaults.matchTimeSeconds]
     ].forEach(([input, min, max, fallback]) => {
       if (!input) return;
       const clamp = () => clampCustomNumberInput(input, min, max, fallback);
@@ -458,6 +528,7 @@
         100: customSpecial100UsesEl?.value
       },
       observeUseLimit: customObserveUsesEl?.value,
+      matchTimeMs: Number(customMatchTimeSecondsEl?.value || customMatchDefaults.matchTimeSeconds) * 1000,
       initialSetup: collectInitialSetup()
     });
   }
@@ -468,7 +539,9 @@
 
   function applyPlayerTitle(element, title) {
     if (!element) return;
-    element.textContent = allowedTitles.has(title) ? title : "新米ねこ";
+    const titleText = String(title || "新米ねこ").trim().slice(0, 16) || "新米ねこ";
+    element.textContent = titleText;
+    applyTitleRarityBackground(element, titleText);
   }
 
   function showMatchPreview(players, playerNames = {}, playerTitles = {}) {
@@ -1022,12 +1095,14 @@
       });
 
       currentProfile = await getOnlineProfile();
+      titleCatalog = window.CatProfile?.loadTitleCatalog ? await window.CatProfile.loadTitleCatalog() : [];
       if (!currentProfile?.playerId || currentProfile.offline) {
         authFallbackReady = true;
         setStatus("オンライン接続に失敗しました。通信環境を確認して、もう一度お試しください。", true);
         return;
       }
 
+      updateResumeButton();
       if (matchMode === "random") {
         startRandomMatch();
       } else {
@@ -1067,7 +1142,8 @@
   if (customInitialSetupButton) {
     customInitialSetupButton.addEventListener("click", () => {
       saveCustomMatchDraft();
-      navigate("initial-board.html");
+      sessionStorage.setItem("catinboxInitialBoardReturnPath", "online.html?mode=friend");
+      navigate("initial-board.html?from=friend");
     });
   }
   if (customMatchResetButton) {
